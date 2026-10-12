@@ -1,11 +1,11 @@
 package cmd
 
 import (
-	"bytes"
-	"encoding/binary"
 	"fmt"
 	"log"
 	"os"
+
+	"github.com/codecrafters-io/sqlite-starter-go/app/parser"
 )
 
 func Dbinfo(databaseFilePath string) {
@@ -13,25 +13,21 @@ func Dbinfo(databaseFilePath string) {
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer databaseFile.Close()
 
-	page1 := make([]byte, 4095)
-
-	_, err = databaseFile.Read(page1)
-	if err != nil {
+	header := parser.DbHeader{}
+	if err := header.Parse(databaseFile); err != nil {
 		log.Fatal(err)
 	}
 
-	var pageSize uint16
-	if err := binary.Read(bytes.NewReader(page1[16:18]), binary.BigEndian, &pageSize); err != nil {
-		fmt.Println("Failed to read integer:", err)
-		return
+	page, err := parser.NewPage(1, header.PageSize)
+	if err != nil {
+		log.Fatal(err)
 	}
-	fmt.Printf("database page size: %d\n", pageSize)
+	if err := page.Parse(databaseFile); err != nil {
+		log.Fatal(err)
+	}
 
-	var numOfTables uint16
-	if err := binary.Read(bytes.NewReader(page1[103:105]), binary.BigEndian, &numOfTables); err != nil {
-		fmt.Println("Failed to read integer:", err)
-		return
-	}
-	fmt.Printf("number of tables: %d\n", numOfTables)
+	fmt.Printf("database page size: %d\n", header.PageSize)
+	fmt.Printf("number of tables: %d\n", page.Header.NumOfCellsOnPage)
 }
