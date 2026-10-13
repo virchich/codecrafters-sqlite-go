@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/codecrafters-io/sqlite-starter-go/app/parser"
+	s "github.com/codecrafters-io/sqlite-starter-go/app/sql"
 )
 
 func Sql(databaseFilePath string, sql string) {
@@ -30,10 +31,13 @@ func Sql(databaseFilePath string, sql string) {
 		log.Fatal(err)
 	}
 
-	command := strings.Split(sql, " ")
-	tableName := command[len(command)-1]
+	command, err := s.NewSqlLine(sql)
+	if err != nil {
+		log.Fatalln(err)
+	}
 
 	var tablePage int64 = 0
+	var tableColumns []string
 
 	for {
 		cell, err := page.GetNextCell()
@@ -45,14 +49,18 @@ func Sql(databaseFilePath string, sql string) {
 		}
 		tblName := cell.Record.Body.Values[2].(string)
 
-		if tblName == tableName {
+		if tblName == command.From {
 			tablePage = cell.Record.Body.Values[3].(int64)
+			tableColumns, err = s.ParseCreateTableSqlCommand(cell.Record.Body.Values[4].(string))
+			if err != nil {
+				log.Fatalln(err)
+			}
 			break
 		}
 	}
 
 	if tablePage == 0 {
-		fmt.Printf("table %s does not exist", tableName)
+		fmt.Printf("table %s does not exist\n", command.From)
 		return
 	}
 
@@ -61,18 +69,46 @@ func Sql(databaseFilePath string, sql string) {
 		log.Fatal(err)
 	}
 
-	count := 0
+	if strings.ToUpper(command.Select) == "COUNT(*)" {
+		count := 0
 
-	for {
-		_, err := requestedTablePage.GetNextCell()
-		if err != nil {
-			if err == io.EOF {
-				break
+		for {
+			_, err := requestedTablePage.GetNextCell()
+			if err != nil {
+				if err == io.EOF {
+					break
+				}
+				log.Fatal(err)
 			}
-			log.Fatal(err)
+			count++
 		}
-		count++
-	}
 
-	fmt.Println(count)
+		fmt.Println(count)
+	} else if command.Select == "*" {
+
+	} else {
+		columns := strings.Split(command.Select, ",")
+
+		for {
+			cell, err := requestedTablePage.GetNextCell()
+			if err != nil {
+				if err == io.EOF {
+					break
+				}
+				log.Fatal(err)
+			}
+
+			values := []string{}
+
+			for i := 0; i < len(columns); i++ {
+				for j := 0; j < len(tableColumns); j++ {
+					if columns[i] == tableColumns[j] {
+						values = append(values, cell.Record.Body.Values[j].(string))
+					}
+				}
+			}
+
+			fmt.Println(strings.Join(values, "|"))
+		}
+	}
 }
