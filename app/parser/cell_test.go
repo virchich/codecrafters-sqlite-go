@@ -20,7 +20,7 @@ func TestNewCell(t *testing.T) {
 		t.Fatalf("unexpected cell/count: %+v, %d", got, n)
 	}
 	if !reflect.DeepEqual(got.Record.Header.SerialTypes, []SerialType{23, Int8}) ||
-		!reflect.DeepEqual(got.Record.Body.Value, []any{"apple", int64(42)}) {
+		!reflect.DeepEqual(got.Record.Body.Values, []any{"apple", int64(42)}) {
 		t.Fatalf("unexpected record: %+v", got.Record)
 	}
 }
@@ -45,7 +45,7 @@ func TestRecordIntegers(t *testing.T) {
 			var encoded [8]byte
 			binary.BigEndian.PutUint64(encoded[:], uint64(want))
 			body, n, err := readRecordBody(encoded[8-tc.width:], 0, []SerialType{tc.st})
-			if err != nil || n != tc.width || body.Value[0] != want {
+			if err != nil || n != tc.width || body.Values[0] != want {
 				t.Fatalf("type %d value %d: got (%+v, %d, %v)", tc.st, want, body, n, err)
 			}
 		}
@@ -60,7 +60,7 @@ func TestRecordFloats(t *testing.T) {
 		if err != nil || n != 8 {
 			t.Fatalf("got (%d, %v)", n, err)
 		}
-		if got := math.Float64bits(body.Value[0].(float64)); got != bits {
+		if got := math.Float64bits(body.Values[0].(float64)); got != bits {
 			t.Fatalf("got bits %x, want %x", got, bits)
 		}
 	}
@@ -71,11 +71,11 @@ func TestRecordSpecialValues(t *testing.T) {
 	types := []SerialType{Null, IntegerZero, IntegerOne, BlobBase, TextBase, 16, 17}
 	body, n, err := readRecordBody(buf, 0, types)
 	want := []any{nil, int64(0), int64(1), []byte{}, "", []byte{0, 0xff}, "hi"}
-	if err != nil || n != len(buf) || !reflect.DeepEqual(body.Value, want) {
+	if err != nil || n != len(buf) || !reflect.DeepEqual(body.Values, want) {
 		t.Fatalf("got (%+v, %d, %v)", body, n, err)
 	}
 	buf[0] = 123
-	if !reflect.DeepEqual(body.Value[5], []byte{0, 0xff}) {
+	if !reflect.DeepEqual(body.Values[5], []byte{0, 0xff}) {
 		t.Fatal("BLOB aliases input buffer")
 	}
 }
@@ -90,7 +90,7 @@ func TestRecordMultibyteVarints(t *testing.T) {
 	// Serial type 129 encodes 58 bytes of text.
 	payload := append([]byte{3, 0x81, 0x01}, make([]byte, 58)...)
 	record, n, err = readRecord(payload, len(payload), 0)
-	if err != nil || n != len(payload) || record.Body.Value[0] != string(make([]byte, 58)) {
+	if err != nil || n != len(payload) || record.Body.Values[0] != string(make([]byte, 58)) {
 		t.Fatalf("multibyte serial type: got (%+v, %d, %v)", record, n, err)
 	}
 }

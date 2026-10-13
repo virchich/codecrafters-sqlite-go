@@ -24,7 +24,7 @@ type RecordHeader struct {
 }
 
 type RecordBody struct {
-	Value []any
+	Values []any
 }
 
 type SerialType uint64
@@ -180,5 +180,5 @@ func readRecordBody(buf []byte, off int, serialTypes []SerialType) (RecordBody, 
 		}
 		total += int(length)
 	}
-	return RecordBody{Value: body}, total, nil
+	return RecordBody{Values: body}, total, nil
 }

@@ -10,8 +10,6 @@ import (
 	"github.com/codecrafters-io/sqlite-starter-go/app/parser"
 )
 
-const ()
-
 func Tables(databaseFilePath string) {
 	databaseFile, err := os.Open(databaseFilePath)
 	if err != nil {
@@ -42,7 +40,7 @@ func Tables(databaseFilePath string) {
 			}
 			log.Fatal(err)
 		}
-		tableName := cell.Record.Body.Value[2].(string)
+		tableName := cell.Record.Body.Values[2].(string)
 		if strings.HasPrefix(tableName, "sqlite_") {
 			continue
 		}

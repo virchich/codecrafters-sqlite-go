@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/codecrafters-io/sqlite-starter-go/app/cmd"
+	"github.com/codecrafters-io/sqlite-starter-go/app/sql"
 )
 
 func main() {
@@ -17,7 +18,11 @@ func main() {
 	case ".tables":
 		cmd.Tables(databaseFilePath)
 	default:
-		fmt.Println("Unknown command", command)
-		os.Exit(1)
+		if sql.IsSql(command) {
+			cmd.Sql(databaseFilePath, command)
+		} else {
+			fmt.Println("Unknown command", command)
+			os.Exit(1)
+		}
 	}
 }
