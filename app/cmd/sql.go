@@ -9,6 +9,7 @@ import (
 
 	"github.com/codecrafters-io/sqlite-starter-go/app/parser"
 	s "github.com/codecrafters-io/sqlite-starter-go/app/sql"
+	"github.com/codecrafters-io/sqlite-starter-go/app/table"
 )
 
 func Sql(databaseFilePath string, sql string) {
@@ -36,7 +37,7 @@ func Sql(databaseFilePath string, sql string) {
 		log.Fatalln(err)
 	}
 
-	var tablePage int64 = 0
+	var tblPage int64 = 0
 	var tableColumns []string
 
 	for {
@@ -47,24 +48,35 @@ func Sql(databaseFilePath string, sql string) {
 			}
 			log.Fatal(err)
 		}
-		tblName := cell.Record.Body.Values[2].(string)
-
-		if tblName == command.From {
-			tablePage = cell.Record.Body.Values[3].(int64)
-			tableColumns, err = s.ParseCreateTableSqlCommand(cell.Record.Body.Values[4].(string))
+		entry, err := table.DecodeSchemaEntry(cell.Record.Body.Values)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if entry.Type == "table" && entry.TableName == command.From {
+			tblPage = entry.RootPage
+			if entry.SQL == nil {
+				log.Fatalf("table %q has no CREATE TABLE SQL", command.From)
+			}
+			tableColumns, err = s.ParseCreateTableSqlCommand(*entry.SQL)
 			if err != nil {
-				log.Fatalln(err)
+				log.Fatal(err)
 			}
 			break
 		}
 	}
 
-	if tablePage == 0 {
+	if tblPage == 0 {
 		fmt.Printf("table %s does not exist\n", command.From)
 		return
 	}
 
-	requestedTablePage, err := parser.NewPage(uint32(tablePage), dbHeader.PageSize)
+	if tblPage < 1 || tblPage > 1<<32-1 {
+		log.Fatalf("invalid root page: %d", tblPage)
+	}
+	requestedTablePage, err := parser.NewPage(uint32(tblPage), dbHeader.PageSize)
+	if err != nil {
+		log.Fatal(err)
+	}
 	if err := requestedTablePage.Parse(databaseFile); err != nil {
 		log.Fatal(err)
 	}
@@ -84,31 +96,51 @@ func Sql(databaseFilePath string, sql string) {
 		}
 
 		fmt.Println(count)
-	} else if command.Select == "*" {
+		return
+	}
 
-	} else {
-		columns := strings.Split(command.Select, ",")
+	schema, err := table.NewSchema(tableColumns)
+	if err != nil {
+		log.Fatal(err)
+	}
+	columns := strings.Split(command.Select, ",")
+	if command.Select == "*" {
+		columns = schema.Columns()
+	}
+	indices, err := schema.Resolve(columns)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-		for {
-			cell, err := requestedTablePage.GetNextCell()
-			if err != nil {
-				if err == io.EOF {
-					break
-				}
-				log.Fatal(err)
-			}
-
-			values := []string{}
-
-			for i := 0; i < len(columns); i++ {
-				for j := 0; j < len(tableColumns); j++ {
-					if columns[i] == tableColumns[j] {
-						values = append(values, cell.Record.Body.Values[j].(string))
-					}
-				}
-			}
-
-			fmt.Println(strings.Join(values, "|"))
+	for {
+		cell, err := requestedTablePage.GetNextCell()
+		if err == io.EOF {
+			break
 		}
+		if err != nil {
+			log.Fatal(err)
+		}
+		row, err := table.NewRow(schema, cell.Record.Body.Values)
+		if err != nil {
+			log.Fatal(err)
+		}
+		values := make([]string, len(indices))
+		for i, index := range indices {
+			value, _ := row.At(index) // Resolve and NewRow validated these positions.
+			values[i] = formatValue(value)
+		}
+		fmt.Println(strings.Join(values, "|"))
+	}
+}
+
+// formatValue renders decoded values for the command's pipe-separated output.
+func formatValue(value any) string {
+	switch value := value.(type) {
+	case nil:
+		return ""
+	case []byte:
+		return string(value)
+	default:
+		return fmt.Sprint(value)
 	}
 }
