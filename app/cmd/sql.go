@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"cmp"
 	"fmt"
 	"io"
+	"math/big"
 	"os"
 	"strings"
 
@@ -75,36 +77,31 @@ func Sql(databaseFile *os.File, sql string) error {
 		return err
 	}
 
-	if strings.ToUpper(command.Select) == "COUNT(*)" {
-		count := 0
-
-		for {
-			_, err := requestedTablePage.GetNextCell()
-			if err != nil {
-				if err == io.EOF {
-					break
-				}
-				return err
-			}
-			count++
-		}
-
-		_, err = fmt.Println(count)
-		return err
-	}
-
 	schema, err := table.NewSchema(tableColumns)
 	if err != nil {
 		return err
 	}
-	columns := strings.Split(command.Select, ",")
-	if command.Select == "*" {
-		columns = schema.Columns()
+	filterIndex := -1
+	if command.Where != nil {
+		positions, err := schema.Resolve([]string{command.Where.Column})
+		if err != nil {
+			return fmt.Errorf("WHERE clause: %w", err)
+		}
+		filterIndex = positions[0]
 	}
-	indices, err := schema.Resolve(columns)
-	if err != nil {
-		return err
+	countOnly := strings.EqualFold(command.Select, "COUNT(*)")
+	var indices []int
+	if !countOnly {
+		columns := strings.Split(command.Select, ",")
+		if command.Select == "*" {
+			columns = schema.Columns()
+		}
+		indices, err = schema.Resolve(columns)
+		if err != nil {
+			return err
+		}
 	}
+	count := 0
 
 	for {
 		cell, err := requestedTablePage.GetNextCell()
@@ -118,14 +115,32 @@ func Sql(databaseFile *os.File, sql string) error {
 		if err != nil {
 			return err
 		}
+		if command.Where != nil {
+			value, _ := row.At(filterIndex)
+			matches, err := matchesWhere(value, command.Where)
+			if err != nil {
+				return fmt.Errorf("WHERE column %q: %w", command.Where.Column, err)
+			}
+			if !matches {
+				continue
+			}
+		}
+		if countOnly {
+			count++
+			continue
+		}
 		values := make([]string, len(indices))
 		for i, index := range indices {
-			value, _ := row.At(index) // Resolve and NewRow validated these positions.
+			value, _ := row.At(index)
 			values[i] = formatValue(value)
 		}
 		if _, err := fmt.Println(strings.Join(values, "|")); err != nil {
 			return fmt.Errorf("write row: %w", err)
 		}
+	}
+	if countOnly {
+		_, err = fmt.Println(count)
+		return err
 	}
 	return nil
 }
@@ -139,5 +154,65 @@ func formatValue(value any) string {
 		return string(value)
 	default:
 		return fmt.Sprint(value)
+	}
+}
+
+// matchesWhere compares decoded values without converting numbers to strings.
+// NULL comparisons do not select rows. Text/numeric coercion is not supported.
+func matchesWhere(value any, where *s.WhereClause) (bool, error) {
+	if value == nil || where.Value == nil {
+		return false, nil
+	}
+	var order int
+	if left, ok := value.(string); ok {
+		right, ok := where.Value.(string)
+		if !ok {
+			return false, fmt.Errorf("cannot compare %T with %T", value, where.Value)
+		}
+		order = strings.Compare(left, right)
+	} else if left, ok := value.(int64); ok {
+		if right, ok := where.Value.(int64); ok {
+			order = cmp.Compare(left, right)
+		} else {
+			leftNumber, rightNumber := numericValue(value), numericValue(where.Value)
+			if rightNumber == nil {
+				return false, fmt.Errorf("cannot compare %T with %T", value, where.Value)
+			}
+			order = leftNumber.Cmp(rightNumber)
+		}
+	} else {
+		left, right := numericValue(value), numericValue(where.Value)
+		if left == nil || right == nil {
+			return false, fmt.Errorf("cannot compare %T with %T", value, where.Value)
+		}
+		order = left.Cmp(right)
+	}
+	switch where.Operator {
+	case s.Equal:
+		return order == 0, nil
+	case s.NotEqual:
+		return order != 0, nil
+	case s.LessThan:
+		return order < 0, nil
+	case s.LessThanOrEqual:
+		return order <= 0, nil
+	case s.GreaterThan:
+		return order > 0, nil
+	case s.GreaterThanOrEqual:
+		return order >= 0, nil
+	default:
+		return false, fmt.Errorf("unsupported operator %q", where.Operator)
+	}
+}
+
+// Exact numeric conversion avoids rounding int64 values when comparing to floats.
+func numericValue(value any) *big.Rat {
+	switch value := value.(type) {
+	case int64:
+		return new(big.Rat).SetInt64(value)
+	case float64:
+		return new(big.Rat).SetFloat64(value)
+	default:
+		return nil
 	}
 }
