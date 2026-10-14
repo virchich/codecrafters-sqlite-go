@@ -1,9 +1,9 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"strings"
 
@@ -11,24 +11,28 @@ import (
 	"github.com/codecrafters-io/sqlite-starter-go/app/table"
 )
 
-func Tables(databaseFilePath string) {
+func Tables(databaseFilePath string) (err error) {
 	databaseFile, err := os.Open(databaseFilePath)
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("open database: %w", err)
 	}
-	defer databaseFile.Close()
+	defer func() {
+		if closeErr := databaseFile.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("close database: %w", closeErr))
+		}
+	}()
 
 	header := parser.DbHeader{}
 	if err := header.Parse(databaseFile); err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("read database header: %w", err)
 	}
 
 	page, err := parser.NewPage(1, header.PageSize)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	if err := page.Parse(databaseFile); err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("read schema page: %w", err)
 	}
 
 	tableNames := []string{}
@@ -39,11 +43,11 @@ func Tables(databaseFilePath string) {
 			if err == io.EOF {
 				break
 			}
-			log.Fatal(err)
+			return err
 		}
 		entry, err := table.DecodeSchemaEntry(cell.Record.Body.Values)
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 		if entry.Type != "table" {
 			continue
@@ -55,5 +59,6 @@ func Tables(databaseFilePath string) {
 		tableNames = append(tableNames, tableName)
 	}
 
-	fmt.Println(strings.Join(tableNames, " "))
+	_, err = fmt.Println(strings.Join(tableNames, " "))
+	return err
 }

@@ -3,26 +3,32 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/codecrafters-io/sqlite-starter-go/app/cmd"
-	"github.com/codecrafters-io/sqlite-starter-go/app/sql"
 )
 
 func main() {
-	databaseFilePath := os.Args[1]
-	command := os.Args[2]
+	if err := run(os.Args[1:]); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
 
+func run(args []string) error {
+	if len(args) != 2 {
+		return fmt.Errorf("usage: %s <database> <command>", os.Args[0])
+	}
+	databaseFilePath, command := args[0], args[1]
 	switch command {
 	case ".dbinfo":
-		cmd.Dbinfo(databaseFilePath)
+		return cmd.Dbinfo(databaseFilePath)
 	case ".tables":
-		cmd.Tables(databaseFilePath)
+		return cmd.Tables(databaseFilePath)
 	default:
-		if sql.IsSql(command) {
-			cmd.Sql(databaseFilePath, command)
-		} else {
-			fmt.Println("Unknown command", command)
-			os.Exit(1)
+		if strings.HasPrefix(command, ".") {
+			return fmt.Errorf("unknown command %q", command)
 		}
+		return cmd.Sql(databaseFilePath, command)
 	}
 }

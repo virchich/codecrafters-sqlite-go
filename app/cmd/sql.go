@@ -1,9 +1,9 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"strings"
 
@@ -12,32 +12,37 @@ import (
 	"github.com/codecrafters-io/sqlite-starter-go/app/table"
 )
 
-func Sql(databaseFilePath string, sql string) {
+func Sql(databaseFilePath string, sql string) (err error) {
 	databaseFile, err := os.Open(databaseFilePath)
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("open database: %w", err)
 	}
-	defer databaseFile.Close()
+	defer func() {
+		if closeErr := databaseFile.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("close database: %w", closeErr))
+		}
+	}()
 
 	dbHeader := parser.DbHeader{}
 	if err := dbHeader.Parse(databaseFile); err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("read database header: %w", err)
 	}
 
 	page, err := parser.NewPage(1, dbHeader.PageSize)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	if err := page.Parse(databaseFile); err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("read schema page: %w", err)
 	}
 
 	command, err := s.NewSqlLine(sql)
 	if err != nil {
-		log.Fatalln(err)
+		return err
 	}
 
-	var tblPage int64 = 0
+	var tblPage int64
+	found := false
 	var tableColumns []string
 
 	for {
@@ -46,39 +51,39 @@ func Sql(databaseFilePath string, sql string) {
 			if err == io.EOF {
 				break
 			}
-			log.Fatal(err)
+			return err
 		}
 		entry, err := table.DecodeSchemaEntry(cell.Record.Body.Values)
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 		if entry.Type == "table" && entry.TableName == command.From {
+			found = true
 			tblPage = entry.RootPage
 			if entry.SQL == nil {
-				log.Fatalf("table %q has no CREATE TABLE SQL", command.From)
+				return fmt.Errorf("table %q has no CREATE TABLE SQL", command.From)
 			}
 			tableColumns, err = s.ParseCreateTableSqlCommand(*entry.SQL)
 			if err != nil {
-				log.Fatal(err)
+				return err
 			}
 			break
 		}
 	}
 
-	if tblPage == 0 {
-		fmt.Printf("table %s does not exist\n", command.From)
-		return
+	if !found {
+		return fmt.Errorf("table %q does not exist", command.From)
 	}
 
 	if tblPage < 1 || tblPage > 1<<32-1 {
-		log.Fatalf("invalid root page: %d", tblPage)
+		return fmt.Errorf("invalid root page: %d", tblPage)
 	}
 	requestedTablePage, err := parser.NewPage(uint32(tblPage), dbHeader.PageSize)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	if err := requestedTablePage.Parse(databaseFile); err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	if strings.ToUpper(command.Select) == "COUNT(*)" {
@@ -90,18 +95,18 @@ func Sql(databaseFilePath string, sql string) {
 				if err == io.EOF {
 					break
 				}
-				log.Fatal(err)
+				return err
 			}
 			count++
 		}
 
-		fmt.Println(count)
-		return
+		_, err = fmt.Println(count)
+		return err
 	}
 
 	schema, err := table.NewSchema(tableColumns)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	columns := strings.Split(command.Select, ",")
 	if command.Select == "*" {
@@ -109,7 +114,7 @@ func Sql(databaseFilePath string, sql string) {
 	}
 	indices, err := schema.Resolve(columns)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	for {
@@ -118,19 +123,22 @@ func Sql(databaseFilePath string, sql string) {
 			break
 		}
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 		row, err := table.NewRow(schema, cell.Record.Body.Values)
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 		values := make([]string, len(indices))
 		for i, index := range indices {
 			value, _ := row.At(index) // Resolve and NewRow validated these positions.
 			values[i] = formatValue(value)
 		}
-		fmt.Println(strings.Join(values, "|"))
+		if _, err := fmt.Println(strings.Join(values, "|")); err != nil {
+			return fmt.Errorf("write row: %w", err)
+		}
 	}
+	return nil
 }
 
 // formatValue renders decoded values for the command's pipe-separated output.

@@ -1,33 +1,37 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
-	"log"
 	"os"
 
 	"github.com/codecrafters-io/sqlite-starter-go/app/parser"
 )
 
-func Dbinfo(databaseFilePath string) {
+func Dbinfo(databaseFilePath string) (err error) {
 	databaseFile, err := os.Open(databaseFilePath)
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("open database: %w", err)
 	}
-	defer databaseFile.Close()
+	defer func() {
+		if closeErr := databaseFile.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("close database: %w", closeErr))
+		}
+	}()
 
 	header := parser.DbHeader{}
 	if err := header.Parse(databaseFile); err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("read database header: %w", err)
 	}
 
 	page, err := parser.NewPage(1, header.PageSize)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	if err := page.Parse(databaseFile); err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("read schema page: %w", err)
 	}
 
-	fmt.Printf("database page size: %d\n", header.PageSize)
-	fmt.Printf("number of tables: %d\n", page.Header.NumOfCellsOnPage)
+	_, err = fmt.Printf("database page size: %d\nnumber of tables: %d\n", header.PageSize, page.Header.NumOfCellsOnPage)
+	return err
 }
