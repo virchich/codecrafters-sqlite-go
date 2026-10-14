@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,17 +10,7 @@ import (
 	"github.com/codecrafters-io/sqlite-starter-go/app/table"
 )
 
-func Tables(databaseFilePath string) (err error) {
-	databaseFile, err := os.Open(databaseFilePath)
-	if err != nil {
-		return fmt.Errorf("open database: %w", err)
-	}
-	defer func() {
-		if closeErr := databaseFile.Close(); closeErr != nil {
-			err = errors.Join(err, fmt.Errorf("close database: %w", closeErr))
-		}
-	}()
-
+func Tables(databaseFile *os.File) error {
 	header := parser.DbHeader{}
 	if err := header.Parse(databaseFile); err != nil {
 		return fmt.Errorf("read database header: %w", err)
