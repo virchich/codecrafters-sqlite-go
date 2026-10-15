@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/xwb1989/sqlparser"
+	sqlparser "github.com/rqlite/sql"
 )
 
 type SqlLine struct {
@@ -35,103 +35,100 @@ type WhereClause struct {
 	Value    any
 }
 
-func NewSqlLine(sql string) (SqlLine, error) {
-	stmt, err := sqlparser.Parse(sql)
+func NewSqlLine(command string) (SqlLine, error) {
+	stmt, err := parseStatement(command)
 	if err != nil {
 		return SqlLine{}, err
 	}
-
-	sl := SqlLine{}
-	sel := []string{}
-
-	switch selectStmt := stmt.(type) {
-	case *sqlparser.Select:
-		if selectStmt.Where != nil {
-			sl.Where, err = parseWhere(selectStmt.Where.Expr)
-			if err != nil {
-				return SqlLine{}, fmt.Errorf("WHERE clause: %w", err)
-			}
-		}
-		for _, expr := range selectStmt.SelectExprs {
-			switch selectExpr := expr.(type) {
-			case *sqlparser.AliasedExpr:
-				sel = append(sel, sqlparser.String(selectExpr.Expr))
-				if !selectExpr.As.IsEmpty() {
-					sel = append(sel, selectExpr.As.String())
-				}
-			case *sqlparser.StarExpr:
-				sel = append(sel, "*")
-			}
-		}
-
-		sl.Select = strings.Join(sel, ",")
-
-		for _, tableExpr := range selectStmt.From {
-			switch table := tableExpr.(type) {
-			case *sqlparser.AliasedTableExpr:
-				sl.From = sqlparser.String(table.Expr)
-				if !table.As.IsEmpty() {
-					sl.From = table.As.String()
-				}
-			}
-		}
-	default:
-		return SqlLine{}, fmt.Errorf("Not a SELECT statement.")
+	query, ok := stmt.(*sqlparser.SelectStatement)
+	if !ok {
+		return SqlLine{}, fmt.Errorf("not a SELECT statement")
 	}
-
+	source, ok := query.Source.(*sqlparser.QualifiedTableName)
+	if !ok || source.Schema != nil {
+		return SqlLine{}, fmt.Errorf("expected a single unqualified table")
+	}
+	if query.WithClause != nil || query.Distinct.IsValid() || query.Compound != nil || len(query.GroupByExprs) != 0 || query.HavingExpr != nil || len(query.Windows) != 0 || len(query.OrderingTerms) != 0 || query.LimitExpr != nil || query.OffsetExpr != nil {
+		return SqlLine{}, fmt.Errorf("unsupported SELECT clause")
+	}
+	sl := SqlLine{From: source.Name.Name}
+	if query.WhereExpr != nil {
+		sl.Where, err = parseWhere(query.WhereExpr)
+		if err != nil {
+			return SqlLine{}, fmt.Errorf("WHERE clause: %w", err)
+		}
+	}
+	columns := make([]string, 0, len(query.Columns))
+	for _, column := range query.Columns {
+		if column.Star.IsValid() {
+			if len(query.Columns) != 1 {
+				return SqlLine{}, fmt.Errorf("star must be the only selected expression")
+			}
+			columns = append(columns, "*")
+			continue
+		}
+		switch expr := column.Expr.(type) {
+		case *sqlparser.Ident:
+			columns = append(columns, expr.Name)
+		case *sqlparser.Call:
+			if !strings.EqualFold(expr.Name.Name, "count") || !expr.Star.IsValid() || expr.Filter != nil || expr.Over != nil || len(query.Columns) != 1 {
+				return SqlLine{}, fmt.Errorf("unsupported SELECT expression")
+			}
+			columns = append(columns, "COUNT(*)")
+		default:
+			return SqlLine{}, fmt.Errorf("unsupported SELECT expression")
+		}
+	}
+	sl.Select = strings.Join(columns, ",")
 	return sl, nil
 }
 
 func parseWhere(expr sqlparser.Expr) (*WhereClause, error) {
 	if group, ok := expr.(*sqlparser.ParenExpr); ok {
-		return parseWhere(group.Expr)
+		return parseWhere(group.X)
 	}
-	comparison, ok := expr.(*sqlparser.ComparisonExpr)
+	comparison, ok := expr.(*sqlparser.BinaryExpr)
 	if !ok {
 		return nil, fmt.Errorf("expected a single column-to-literal comparison")
 	}
-	operator := Operator(comparison.Operator)
+	operator := Operator(comparison.Op.String())
 	switch operator {
 	case Equal, NotEqual, LessThan, LessThanOrEqual, GreaterThan, GreaterThanOrEqual:
 	default:
-		return nil, fmt.Errorf("unsupported operator %q", comparison.Operator)
+		return nil, fmt.Errorf("unsupported operator %q", operator)
 	}
-	column, ok := comparison.Left.(*sqlparser.ColName)
-	if !ok || !column.Qualifier.IsEmpty() {
+	column, ok := comparison.X.(*sqlparser.Ident)
+	if !ok {
 		return nil, fmt.Errorf("expected an unqualified column on the left")
 	}
-	value, err := searchValue(comparison.Right)
+	value, err := searchValue(comparison.Y)
 	if err != nil {
 		return nil, err
 	}
-	return &WhereClause{Column: column.Name.String(), Operator: operator, Value: value}, nil
+	return &WhereClause{Column: column.Name, Operator: operator, Value: value}, nil
 }
 
 func searchValue(expr sqlparser.Expr) (any, error) {
 	switch value := expr.(type) {
-	case *sqlparser.NullVal:
+	case *sqlparser.NullLit:
 		return nil, nil
-	case *sqlparser.SQLVal:
-		switch value.Type {
-		case sqlparser.StrVal:
-			return string(value.Val), nil
-		case sqlparser.IntVal:
-			return strconv.ParseInt(string(value.Val), 10, 64)
-		case sqlparser.FloatVal:
-			return strconv.ParseFloat(string(value.Val), 64)
-		}
+	case *sqlparser.StringLit:
+		return value.Value, nil
+	case *sqlparser.NumberLit:
+		return parseNumber(value.Value)
 	case *sqlparser.UnaryExpr:
-		if value.Operator == "+" || value.Operator == "-" {
-			if literal, ok := value.Expr.(*sqlparser.SQLVal); ok {
-				text := value.Operator + string(literal.Val)
-				switch literal.Type {
-				case sqlparser.IntVal:
-					return strconv.ParseInt(text, 10, 64)
-				case sqlparser.FloatVal:
-					return strconv.ParseFloat(text, 64)
-				}
+		if value.Op == sqlparser.PLUS || value.Op == sqlparser.MINUS {
+			if literal, ok := value.X.(*sqlparser.NumberLit); ok {
+				return parseNumber(value.Op.String() + literal.Value)
 			}
 		}
 	}
 	return nil, fmt.Errorf("expected a string, number, or NULL search value")
+}
+
+func parseNumber(value string) (any, error) {
+	if strings.ContainsAny(value, ".eE") {
+		return strconv.ParseFloat(value, 64)
+	}
+	return strconv.ParseInt(value, 10, 64)
 }

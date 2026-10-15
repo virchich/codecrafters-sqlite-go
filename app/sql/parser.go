@@ -2,46 +2,40 @@ package sql
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
-	"github.com/xwb1989/sqlparser"
+	"github.com/rqlite/sql"
 )
 
-func IsSql(command string) bool {
-	if _, err := sqlparser.Parse(command); err != nil {
-		return false
-	}
-	return true
-}
-
-func ParseCreateTableSqlCommand(command string) ([]string, error) {
-	pkAutoIncRegex := regexp.MustCompile(`(?i)primary\s+key\s+auto_increment`)
-
-	sanitizedSQL := strings.ToLower(command)
-	sanitizedSQL = strings.ReplaceAll(sanitizedSQL, "integer", "int")
-	sanitizedSQL = strings.ReplaceAll(sanitizedSQL, "autoincrement", "auto_increment")
-
-	// Flip "primary key auto_increment" to "auto_increment primary key"
-	sanitizedSQL = pkAutoIncRegex.ReplaceAllString(sanitizedSQL, "auto_increment primary key")
-
-	stmt, err := sqlparser.Parse(sanitizedSQL)
+// parseStatement requires exactly one statement so trailing SQL is never ignored.
+func parseStatement(command string) (sql.Statement, error) {
+	statements, err := sql.NewParser(strings.NewReader(command)).ParseStatements()
 	if err != nil {
 		return nil, err
 	}
-
-	columns := []string{}
-
-	switch ddl := stmt.(type) {
-	case *sqlparser.DDL:
-		if ddl.TableSpec != nil {
-			for _, col := range ddl.TableSpec.Columns {
-				columns = append(columns, col.Name.String())
-			}
-		}
-	default:
-		return nil, fmt.Errorf("\"%s\" is not an CREATE TABLE command", command)
+	if len(statements) != 1 {
+		return nil, fmt.Errorf("expected exactly one SQL statement")
 	}
+	return statements[0], nil
+}
 
+func IsSql(command string) bool {
+	_, err := parseStatement(command)
+	return err == nil
+}
+
+func ParseCreateTableSqlCommand(command string) ([]string, error) {
+	stmt, err := parseStatement(command)
+	if err != nil {
+		return nil, err
+	}
+	ddl, ok := stmt.(*sql.CreateTableStatement)
+	if !ok || len(ddl.Columns) == 0 {
+		return nil, fmt.Errorf("expected CREATE TABLE with column definitions")
+	}
+	columns := make([]string, len(ddl.Columns))
+	for i, col := range ddl.Columns {
+		columns[i] = col.Name.Name
+	}
 	return columns, nil
 }
