@@ -81,6 +81,17 @@ func Sql(databaseFile *os.File, sql string) error {
 	if err != nil {
 		return err
 	}
+
+	count := 0
+
+	if err := iterOverTableLeafCells(requestedTablePage, schema, &command, count); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func iterOverTableLeafCells(page parser.Page, schema *table.Schema, command *s.SqlLine, count int) error {
 	filterIndex := -1
 	if command.Where != nil {
 		positions, err := schema.Resolve([]string{command.Where.Column})
@@ -91,6 +102,7 @@ func Sql(databaseFile *os.File, sql string) error {
 	}
 	countOnly := strings.EqualFold(command.Select, "COUNT(*)")
 	var indices []int
+	var err error
 	if !countOnly {
 		columns := strings.Split(command.Select, ",")
 		if command.Select == "*" {
@@ -101,10 +113,9 @@ func Sql(databaseFile *os.File, sql string) error {
 			return err
 		}
 	}
-	count := 0
 
 	for {
-		cell, err := requestedTablePage.GetNextTableLeafCell()
+		cell, err := page.GetNextTableLeafCell()
 		if err == io.EOF {
 			break
 		}
@@ -142,6 +153,7 @@ func Sql(databaseFile *os.File, sql string) error {
 		_, err = fmt.Println(count)
 		return err
 	}
+
 	return nil
 }
 
