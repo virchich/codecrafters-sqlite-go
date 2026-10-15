@@ -9,7 +9,7 @@ import (
 // value and the number of bytes consumed. On error, the value is zero.
 func DecodeVariant(buf []byte, off int) (uint64, int, error) {
 	if off < 0 || off > len(buf) {
-		return 0, 0, fmt.Errorf("offset is out of bounds")
+		return 0, 0, fmt.Errorf("sql_decoder.DecodeVariant(): offset is out of bounds")
 	}
 
 	var value uint64

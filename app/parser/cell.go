@@ -66,7 +66,7 @@ func NewCell(buf []byte, off int) (Cell, int, error) {
 	}
 	// Check before converting the untrusted uint64 length to int.
 	if payloadSize > uint64(len(buf)-(off+total)) {
-		return Cell{}, total, fmt.Errorf("cell payload is not available locally: %w", io.ErrUnexpectedEOF)
+		return Cell{}, total, fmt.Errorf("cell.NewCell(): cell payload is not available locally: %w", io.ErrUnexpectedEOF)
 	}
 	record, n, err := readRecord(buf, int(payloadSize), off+total)
 	total += n
@@ -78,7 +78,7 @@ func NewCell(buf []byte, off int) (Cell, int, error) {
 
 func readRecord(buf []byte, size int, off int) (Record, int, error) {
 	if off < 0 || off > len(buf) || size < 0 {
-		return Record{}, 0, fmt.Errorf("invalid record offset or size")
+		return Record{}, 0, fmt.Errorf("cell.readRecord(): invalid record offset or size")
 	}
 	if size > len(buf)-off {
 		return Record{}, 0, io.ErrUnexpectedEOF
@@ -95,7 +95,7 @@ func readRecord(buf []byte, size int, off int) (Record, int, error) {
 		return Record{}, total, err
 	}
 	if total != size {
-		return Record{}, total, fmt.Errorf("record consumed %d bytes, payload contains %d", total, size)
+		return Record{}, total, fmt.Errorf("cell.readRecord(): record consumed %d bytes, payload contains %d", total, size)
 	}
 	return Record{Header: header, Body: body}, total, nil
 }
@@ -106,7 +106,7 @@ func readRecordHeader(buf []byte, off int) (RecordHeader, int, error) {
 		return RecordHeader{}, total, err
 	}
 	if headerSize < uint64(total) {
-		return RecordHeader{}, total, fmt.Errorf("header size is smaller than its size varint")
+		return RecordHeader{}, total, fmt.Errorf("cell.readRecordHeader(): header size is smaller than its size varint")
 	}
 	if headerSize > uint64(len(buf)-off) {
 		return RecordHeader{}, total, io.ErrUnexpectedEOF
@@ -117,7 +117,7 @@ func readRecordHeader(buf []byte, off int) (RecordHeader, int, error) {
 		st, n, err := DecodeVariant(buf[:headerEnd], off+total)
 		total += n
 		if err != nil {
-			return RecordHeader{}, total, fmt.Errorf("serial type crosses header boundary: %w", err)
+			return RecordHeader{}, total, fmt.Errorf("cell.readRecordHeader(): serial type crosses header boundary: %w", err)
 		}
 		serialTypes = append(serialTypes, SerialType(st))
 	}
@@ -126,7 +126,7 @@ func readRecordHeader(buf []byte, off int) (RecordHeader, int, error) {
 
 func readRecordBody(buf []byte, off int, serialTypes []SerialType) (RecordBody, int, error) {
 	if off < 0 || off > len(buf) {
-		return RecordBody{}, 0, fmt.Errorf("offset is out of bounds")
+		return RecordBody{}, 0, fmt.Errorf("cell.readRecordBody(): offset is out of bounds")
 	}
 	total := 0
 	body := make([]any, len(serialTypes))
@@ -148,7 +148,7 @@ func readRecordBody(buf []byte, off int, serialTypes []SerialType) (RecordBody, 
 		case Int64, Float64:
 			length = 8
 		case Reserved10, Reserved11:
-			return RecordBody{}, total, fmt.Errorf("reserved serial type: %d", st)
+			return RecordBody{}, total, fmt.Errorf("cell.readRecordBody(): reserved serial type: %d", st)
 		default:
 			if st%2 == 0 {
 				length = uint64((st - BlobBase) / 2)

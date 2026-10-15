@@ -46,7 +46,7 @@ type PageHeader struct {
 // Parse expects a buffer starting at the beginning of the whole page.
 func (h *PageHeader) Parse(pageNum uint32, buf []byte) (int, error) {
 	if pageNum == 0 {
-		return 0, fmt.Errorf("page numbers start at 1")
+		return 0, fmt.Errorf("page_header.Parse(): page numbers start at 1")
 	}
 	headerStart := 0
 	if pageNum == 1 {
@@ -64,7 +64,7 @@ func (h *PageHeader) Parse(pageNum uint32, buf []byte) (int, error) {
 		headerSize = interiorPageHeaderSize
 	case indexLeafPage, tableLeafPage:
 	default:
-		return 0, fmt.Errorf("invalid b-tree page type: %#x", pageType)
+		return 0, fmt.Errorf("page_header.Parse(): invalid b-tree page type: %#x", pageType)
 	}
 
 	if len(header) < headerSize {

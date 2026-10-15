@@ -1,8 +1,9 @@
 package cmd
 
 import (
-	s "github.com/codecrafters-io/sqlite-starter-go/app/sql"
 	"testing"
+
+	s "github.com/codecrafters-io/sqlite-starter-go/app/sql"
 )
 
 func TestFormatValue(t *testing.T) {
