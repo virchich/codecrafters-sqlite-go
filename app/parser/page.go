@@ -79,12 +79,12 @@ func (p *Page) getCellPointerArray(buf []byte, off int, numOfCells uint16) ([]ui
 	return cellPointer, nil
 }
 
-func (p *Page) GetNextCell() (Cell, error) {
+func (p *Page) GetNextTableLeafCell() (TableLeafCell, error) {
 	if p.Header.PageType != tableLeafPage {
-		return Cell{}, fmt.Errorf("page.GetNextCell(): cell iteration requires a table leaf page, got %#x", p.Header.PageType)
+		return TableLeafCell{}, fmt.Errorf("page.GetNextCell(): cell iteration requires a table leaf page, got %#x", p.Header.PageType)
 	}
 	if p.cellIdx >= len(p.cellPointer) {
-		return Cell{}, io.EOF
+		return TableLeafCell{}, io.EOF
 	}
 	pointer := int(p.cellPointer[p.cellIdx])
 	headerStart := 0
@@ -94,11 +94,11 @@ func (p *Page) GetNextCell() (Cell, error) {
 	pointerArrayEnd := headerStart + leafPageHeaderSize + 2*len(p.cellPointer)
 	if pointer < pointerArrayEnd || pointer >= len(p.buf) ||
 		uint32(pointer) < p.Header.CellContentAreaStart {
-		return Cell{}, fmt.Errorf("page.GetNextCell(): invalid cell pointer: %d", pointer)
+		return TableLeafCell{}, fmt.Errorf("page.GetNextCell(): invalid cell pointer: %d", pointer)
 	}
-	cell, _, err := NewCell(p.buf, int(p.cellPointer[p.cellIdx]))
+	cell, _, err := NewTableLeafCell(p.buf, int(p.cellPointer[p.cellIdx]))
 	if err != nil {
-		return Cell{}, err
+		return TableLeafCell{}, err
 	}
 	p.cellIdx++
 	return cell, nil

@@ -27,7 +27,7 @@ func Tables(databaseFile *os.File) error {
 	tableNames := []string{}
 
 	for {
-		cell, err := page.GetNextCell()
+		cell, err := page.GetNextTableLeafCell()
 		if err != nil {
 			if err == io.EOF {
 				break

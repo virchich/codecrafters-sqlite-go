@@ -41,13 +41,13 @@ func TestPageCellIteration(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, want := range []int64{7, 8} {
-				cell, err := page.GetNextCell()
+				cell, err := page.GetNextTableLeafCell()
 				if err != nil || cell.Rowid != want {
 					t.Fatalf("page %d: got rowid %d, err %v; want %d", pageNum, cell.Rowid, err, want)
 				}
 			}
 			for i := 0; i < 2; i++ {
-				if _, err := page.GetNextCell(); !errors.Is(err, io.EOF) {
+				if _, err := page.GetNextTableLeafCell(); !errors.Is(err, io.EOF) {
 					t.Fatalf("expected EOF, got %v", err)
 				}
 			}
@@ -58,17 +58,17 @@ func TestPageCellIteration(t *testing.T) {
 func TestPageIterationBounds(t *testing.T) {
 	p, _ := NewPage(2, 512)
 	p.Header.PageType = tableLeafPage
-	if _, err := p.GetNextCell(); !errors.Is(err, io.EOF) {
+	if _, err := p.GetNextTableLeafCell(); !errors.Is(err, io.EOF) {
 		t.Fatalf("empty page: %v", err)
 	}
 	for _, pointer := range []uint16{0, 9, 512, 65535} {
 		p.cellPointer = []uint16{pointer}
-		if _, err := p.GetNextCell(); err == nil {
+		if _, err := p.GetNextTableLeafCell(); err == nil {
 			t.Fatalf("accepted pointer %d", pointer)
 		}
 	}
 	p.Header.PageType = tableInteriorPage
-	if _, err := p.GetNextCell(); err == nil || errors.Is(err, io.EOF) {
+	if _, err := p.GetNextTableLeafCell(); err == nil || errors.Is(err, io.EOF) {
 		t.Fatalf("expected unsupported page error, got %v", err)
 	}
 	for _, off := range []int{-1, 512, 513} {

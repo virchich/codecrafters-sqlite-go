@@ -7,12 +7,12 @@ import (
 	"testing"
 )
 
-func TestNewCell(t *testing.T) {
+func TestNewTableLeafCell(t *testing.T) {
 	// Payload: three-byte header, "apple", and integer 42.
 	cell := []byte{9, 7, 3, 23, 1, 'a', 'p', 'p', 'l', 'e', 42}
 	buf := append([]byte{99}, cell...)
 	buf = append(buf, 99)
-	got, n, err := NewCell(buf, 1)
+	got, n, err := NewTableLeafCell(buf, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,7 +27,7 @@ func TestNewCell(t *testing.T) {
 
 func TestNewCellNegativeRowID(t *testing.T) {
 	buf := []byte{1, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 1}
-	cell, n, err := NewCell(buf, 0)
+	cell, n, err := NewTableLeafCell(buf, 0)
 	if err != nil || n != len(buf) || cell.Rowid != -1 {
 		t.Fatalf("got (%+v, %d, %v)", cell, n, err)
 	}
@@ -120,7 +120,7 @@ func TestNewCellMalformed(t *testing.T) {
 		{"huge header", []byte{9, 1, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, _, err := NewCell(tc.buf, tc.off); err == nil {
+			if _, _, err := NewTableLeafCell(tc.buf, tc.off); err == nil {
 				t.Fatal("accepted malformed cell")
 			}
 		})

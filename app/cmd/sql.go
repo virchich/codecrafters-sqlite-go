@@ -37,7 +37,7 @@ func Sql(databaseFile *os.File, sql string) error {
 	var tableColumns []string
 
 	for {
-		cell, err := page.GetNextCell()
+		cell, err := page.GetNextTableLeafCell()
 		if err != nil {
 			if err == io.EOF {
 				break
@@ -104,7 +104,7 @@ func Sql(databaseFile *os.File, sql string) error {
 	count := 0
 
 	for {
-		cell, err := requestedTablePage.GetNextCell()
+		cell, err := requestedTablePage.GetNextTableLeafCell()
 		if err == io.EOF {
 			break
 		}

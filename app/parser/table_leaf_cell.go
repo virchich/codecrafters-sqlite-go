@@ -7,7 +7,7 @@ import (
 	"math"
 )
 
-type Cell struct {
+type TableLeafCell struct {
 	Size   uint64
 	Rowid  int64
 	Record Record
@@ -49,31 +49,31 @@ const (
 	TextBase SerialType = 13
 )
 
-// NewCell reads a table leaf cell whose entire payload is stored locally.
+// NewTableLeafCell reads a table leaf cell whose entire payload is stored locally.
 // Text is interpreted as UTF-8. The caller must handle page types and overflow
 // pages before using this parser; this function has no page metadata.
 // Returned byte counts include bytes consumed before an error.
-func NewCell(buf []byte, off int) (Cell, int, error) {
+func NewTableLeafCell(buf []byte, off int) (TableLeafCell, int, error) {
 	payloadSize, n, err := DecodeVariant(buf, off)
 	if err != nil {
-		return Cell{}, n, err
+		return TableLeafCell{}, n, err
 	}
 	total := n
 	rowID, n, err := DecodeVariant(buf, off+total)
 	total += n
 	if err != nil {
-		return Cell{}, total, err
+		return TableLeafCell{}, total, err
 	}
 	// Check before converting the untrusted uint64 length to int.
 	if payloadSize > uint64(len(buf)-(off+total)) {
-		return Cell{}, total, fmt.Errorf("cell.NewCell(): cell payload is not available locally: %w", io.ErrUnexpectedEOF)
+		return TableLeafCell{}, total, fmt.Errorf("cell.NewCell(): cell payload is not available locally: %w", io.ErrUnexpectedEOF)
 	}
 	record, n, err := readRecord(buf, int(payloadSize), off+total)
 	total += n
 	if err != nil {
-		return Cell{}, total, err
+		return TableLeafCell{}, total, err
 	}
-	return Cell{Size: payloadSize, Rowid: int64(rowID), Record: record}, total, nil
+	return TableLeafCell{Size: payloadSize, Rowid: int64(rowID), Record: record}, total, nil
 }
 
 func readRecord(buf []byte, size int, off int) (Record, int, error) {
