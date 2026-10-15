@@ -34,7 +34,7 @@ func Sql(databaseFile *os.File, sql string) error {
 
 	var tblPage int64
 	found := false
-	var tableColumns []string
+	var definition s.TableDefinition
 
 	for {
 		cell, err := page.GetNextTableLeafCell()
@@ -54,7 +54,7 @@ func Sql(databaseFile *os.File, sql string) error {
 			if entry.SQL == nil {
 				return fmt.Errorf("table %q has no CREATE TABLE SQL", command.From)
 			}
-			tableColumns, err = s.ParseCreateTableSqlCommand(*entry.SQL)
+			definition, err = s.ParseCreateTableSqlCommand(*entry.SQL)
 			if err != nil {
 				return err
 			}
@@ -77,21 +77,70 @@ func Sql(databaseFile *os.File, sql string) error {
 		return err
 	}
 
-	schema, err := table.NewSchema(tableColumns)
+	if definition.WithoutRowID {
+		return fmt.Errorf("table %q: WITHOUT ROWID tables are not supported", command.From)
+	}
+	schema, err := table.NewRowIDSchema(definition.Columns, definition.RowIDColumn)
 	if err != nil {
 		return err
 	}
 
-	count := 0
+	return executeTableQuery(requestedTablePage, schema, &command, dbHeader.PageSize, databaseFile)
+}
 
-	if err := iterOverTableLeafCells(requestedTablePage, schema, &command, count); err != nil {
+// executeTableQuery owns aggregation so a multi-page query prints one result.
+func executeTableQuery(page parser.Page, schema *table.Schema, command *s.SqlLine, pageSize uint32, dbf *os.File) error {
+	count := 0
+	if err := iterateOverTable(page, schema, command, &count, pageSize, dbf); err != nil {
 		return err
 	}
-
+	if strings.EqualFold(command.Select, "COUNT(*)") {
+		if _, err := fmt.Println(count); err != nil {
+			return fmt.Errorf("write count: %w", err)
+		}
+	}
 	return nil
 }
 
-func iterOverTableLeafCells(page parser.Page, schema *table.Schema, command *s.SqlLine, count int) error {
+func iterateOverTable(page parser.Page, schema *table.Schema, command *s.SqlLine, count *int, pageSize uint32, dbf *os.File) error {
+	switch page.Header.PageType {
+	case parser.TableLeafPage:
+		return iterOverTableLeafCells(page, schema, command, count)
+	case parser.TableInteriorPage:
+		return iterateOverTableInteriorCells(page, schema, command, count, pageSize, dbf)
+	default:
+		return fmt.Errorf("cmd.iterateOverTable(): unsupported page type: %#x", page.Header.PageType)
+	}
+}
+
+func iterateOverTableInteriorCells(page parser.Page, schema *table.Schema, command *s.SqlLine, count *int, pageSize uint32, dbf *os.File) error {
+	visitChild := func(pageNumber uint32) error {
+		child, err := parser.NewPage(pageNumber, pageSize)
+		if err != nil {
+			return err
+		}
+		if err := child.Parse(dbf); err != nil {
+			return fmt.Errorf("read child page %d: %w", pageNumber, err)
+		}
+		return iterateOverTable(child, schema, command, count, pageSize, dbf)
+	}
+	for {
+		cell, err := page.GetNextTableInteriorCall()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		if err := visitChild(cell.PageNumber); err != nil {
+			return err
+		}
+	}
+	// This final child lives in the page header, not in a cell.
+	return visitChild(page.Header.RightMostPointer)
+}
+
+func iterOverTableLeafCells(page parser.Page, schema *table.Schema, command *s.SqlLine, count *int) error {
 	filterIndex := -1
 	if command.Where != nil {
 		positions, err := schema.Resolve([]string{command.Where.Column})
@@ -122,7 +171,7 @@ func iterOverTableLeafCells(page parser.Page, schema *table.Schema, command *s.S
 		if err != nil {
 			return err
 		}
-		row, err := table.NewRow(schema, cell.Record.Body.Values)
+		row, err := table.NewRowWithRowID(schema, cell.Record.Body.Values, cell.Rowid)
 		if err != nil {
 			return err
 		}
@@ -137,7 +186,7 @@ func iterOverTableLeafCells(page parser.Page, schema *table.Schema, command *s.S
 			}
 		}
 		if countOnly {
-			count++
+			(*count)++
 			continue
 		}
 		values := make([]string, len(indices))
@@ -148,10 +197,6 @@ func iterOverTableLeafCells(page parser.Page, schema *table.Schema, command *s.S
 		if _, err := fmt.Println(strings.Join(values, "|")); err != nil {
 			return fmt.Errorf("write row: %w", err)
 		}
-	}
-	if countOnly {
-		_, err = fmt.Println(count)
-		return err
 	}
 
 	return nil

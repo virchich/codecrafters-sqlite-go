@@ -10,10 +10,10 @@ const (
 	leafPageHeaderSize     = 8
 	interiorPageHeaderSize = 12
 
-	indexInteriorPage = 0x02
-	tableInteriorPage = 0x05
-	indexLeafPage     = 0x0a
-	tableLeafPage     = 0x0d
+	IndexInteriorPage = 0x02
+	TableInteriorPage = 0x05
+	IndexLeafPage     = 0x0a
+	TableLeafPage     = 0x0d
 
 	pageTypeOffset = 0
 	pageTypeLen    = 1
@@ -60,9 +60,9 @@ func (h *PageHeader) Parse(pageNum uint32, buf []byte) (int, error) {
 	headerSize := leafPageHeaderSize
 
 	switch pageType {
-	case indexInteriorPage, tableInteriorPage:
+	case IndexInteriorPage, TableInteriorPage:
 		headerSize = interiorPageHeaderSize
-	case indexLeafPage, tableLeafPage:
+	case IndexLeafPage, TableLeafPage:
 	default:
 		return 0, fmt.Errorf("page_header.Parse(): invalid b-tree page type: %#x", pageType)
 	}

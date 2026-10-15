@@ -24,18 +24,52 @@ func IsSql(command string) bool {
 	return err == nil
 }
 
-func ParseCreateTableSqlCommand(command string) ([]string, error) {
+// TableDefinition preserves the metadata needed to interpret stored records.
+type TableDefinition struct {
+	Columns      []string
+	RowIDColumn  int // -1 means no declared column aliases rowid.
+	WithoutRowID bool
+}
+
+func ParseCreateTableSqlCommand(command string) (TableDefinition, error) {
+	definition := TableDefinition{RowIDColumn: -1}
 	stmt, err := parseStatement(command)
 	if err != nil {
-		return nil, err
+		return definition, err
 	}
 	ddl, ok := stmt.(*sql.CreateTableStatement)
 	if !ok || len(ddl.Columns) == 0 {
-		return nil, fmt.Errorf("expected CREATE TABLE with column definitions")
+		return definition, fmt.Errorf("expected CREATE TABLE with column definitions")
 	}
-	columns := make([]string, len(ddl.Columns))
+	definition.WithoutRowID = ddl.Without.IsValid()
+	definition.Columns = make([]string, len(ddl.Columns))
 	for i, col := range ddl.Columns {
-		columns[i] = col.Name.Name
+		definition.Columns[i] = col.Name.Name
 	}
-	return columns, nil
+	if definition.WithoutRowID {
+		return definition, nil
+	}
+	for i, col := range ddl.Columns {
+		// INTEGER affinity alone is insufficient: the declared type must be exact.
+		if col.Type == nil || !strings.EqualFold(col.Type.Name.Name, "INTEGER") || col.Type.Lparen.IsValid() {
+			continue
+		}
+		for _, constraint := range col.Constraints {
+			if pk, ok := constraint.(*sql.PrimaryKeyConstraint); ok && !pk.Desc.IsValid() {
+				definition.RowIDColumn = i
+			}
+		}
+		for _, constraint := range ddl.Constraints {
+			pk, ok := constraint.(*sql.PrimaryKeyConstraint)
+			if !ok || len(pk.Columns) != 1 {
+				continue
+			}
+			name, ok := pk.Columns[0].X.(*sql.Ident)
+			// Table-level PRIMARY KEY(id DESC) still aliases rowid.
+			if ok && strings.EqualFold(name.Name, col.Name.Name) {
+				definition.RowIDColumn = i
+			}
+		}
+	}
+	return definition, nil
 }

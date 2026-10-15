@@ -19,7 +19,7 @@ func TestSQLiteCreateTable(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !reflect.DeepEqual(got, tc.columns) {
+		if !reflect.DeepEqual(got.Columns, tc.columns) {
 			t.Fatalf("columns = %v, want %v", got, tc.columns)
 		}
 	}
@@ -47,5 +47,36 @@ func TestRejectTrailingStatements(t *testing.T) {
 	}
 	if _, err := sql.NewSqlLine(`SELECT name FROM people; SELECT age FROM people`); err == nil {
 		t.Fatal("accepted multiple statements")
+	}
+}
+
+func TestRowIDDefinitions(t *testing.T) {
+	for _, tc := range []struct {
+		ddl     string
+		column  int
+		without bool
+	}{
+		{`CREATE TABLE t(name TEXT, id INTEGER PRIMARY KEY AUTOINCREMENT)`, 1, false},
+		{`CREATE TABLE t(id integer PRIMARY KEY)`, 0, false},
+		{`CREATE TABLE t(id INTEGER PRIMARY KEY ASC)`, 0, false},
+		{`CREATE TABLE t(id INTEGER PRIMARY KEY DESC)`, -1, false},
+		{`CREATE TABLE t(id INTEGER, PRIMARY KEY(id DESC))`, 0, false},
+		{`CREATE TABLE t("Key" INTEGER, PRIMARY KEY("KEY"))`, 0, false},
+		{`CREATE TABLE t(id INT PRIMARY KEY)`, -1, false},
+		{`CREATE TABLE t(id BIGINT PRIMARY KEY)`, -1, false},
+		{`CREATE TABLE t(id INTEGER(8) PRIMARY KEY)`, -1, false},
+		{`CREATE TABLE t(id INTEGER, name TEXT, PRIMARY KEY(id, name))`, -1, false},
+		{`CREATE TABLE t(id INTEGER PRIMARY KEY) WITHOUT ROWID`, -1, true},
+		{`CREATE TABLE t(id INTEGER, name TEXT)`, -1, false},
+	} {
+		t.Run(tc.ddl, func(t *testing.T) {
+			got, err := sql.ParseCreateTableSqlCommand(tc.ddl)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.RowIDColumn != tc.column || got.WithoutRowID != tc.without {
+				t.Fatalf("got %+v", got)
+			}
+		})
 	}
 }
