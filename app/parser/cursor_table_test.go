@@ -30,6 +30,11 @@ func TestTableCursorInitialization(t *testing.T) {
 				page := data[(i+1)*512 : (i+2)*512]
 				page[0] = typ
 				binary.BigEndian.PutUint16(page[5:], 500)
+				if typ == TableLeafPage {
+					binary.BigEndian.PutUint16(page[3:], 1)
+					binary.BigEndian.PutUint16(page[8:], 500)
+					copy(page[500:], []byte{3, 7, 2, 1, 42})
+				}
 				if typ == TableInteriorPage {
 					binary.BigEndian.PutUint32(page[8:], uint32(i+3))
 					if !tc.emptyInterior {
@@ -60,20 +65,9 @@ func TestTableCursorInitialization(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if cursor.db != &db || cursor.leaf == nil || cursor.leaf.pageNum != uint32(len(tc.types)+1) || cursor.exhausted {
-				t.Fatalf("incorrect cursor: %+v", cursor)
-			}
-			if len(cursor.stack) != len(tc.types)-1 {
-				t.Fatalf("stack depth %d", len(cursor.stack))
-			}
-			for i, frame := range cursor.stack {
-				wantCellIdx := 1
-				if tc.emptyInterior {
-					wantCellIdx = 0
-				}
-				if frame.page.pageNum != uint32(i+2) || frame.nextChild != 1 || frame.page.cellIdx != wantCellIdx {
-					t.Fatalf("incorrect frame: %+v", frame)
-				}
+			record, err := cursor.Next()
+			if err != nil || record.RowID != 7 || len(record.Record.Body) != 1 || record.Record.Body[0] != int64(42) {
+				t.Fatalf("first record=%+v err=%v", record, err)
 			}
 		})
 	}

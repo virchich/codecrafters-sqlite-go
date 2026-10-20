@@ -80,3 +80,39 @@ func TestRowIDDefinitions(t *testing.T) {
 		})
 	}
 }
+
+func TestCreateIndexDefinition(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		statement string
+		want      sql.IndexDefinition
+	}{
+		{"single column", "CREATE INDEX idx ON people(name)",
+			sql.IndexDefinition{TableName: "people", Columns: []string{"name"}}},
+		{"column order", "CREATE INDEX idx ON people(country, name)",
+			sql.IndexDefinition{TableName: "people", Columns: []string{"country", "name"}}},
+		{"quoted identifiers", "CREATE UNIQUE INDEX idx ON \"People\"(\"Full Name\")",
+			sql.IndexDefinition{TableName: "People", Columns: []string{"Full Name"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := sql.ParseCreateIndexSqlCommand(tc.statement)
+			if err != nil || !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("definition=%+v err=%v; want %+v", got, err, tc.want)
+			}
+		})
+	}
+}
+
+func TestCreateIndexRejectsInvalidStatements(t *testing.T) {
+	for _, statement := range []string{
+		"SELECT name FROM people",
+		"CREATE INDEX",
+		"CREATE INDEX idx ON people(name); SELECT name FROM people",
+	} {
+		t.Run(statement, func(t *testing.T) {
+			if _, err := sql.ParseCreateIndexSqlCommand(statement); err == nil {
+				t.Fatal("accepted invalid CREATE INDEX input")
+			}
+		})
+	}
+}

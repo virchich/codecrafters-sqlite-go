@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"testing"
 )
@@ -119,17 +118,23 @@ func TestPayloadCellTruncation(t *testing.T) {
 
 func TestLocalPayloadLen(t *testing.T) {
 	for _, tc := range []struct {
+		name     string
 		size     uint64
 		reserved byte
 		table    bool
 		want     uint64
 	}{
-		{0, 0, true, 0}, {477, 0, true, 477}, {478, 0, true, 39},
-		{102, 0, false, 102}, {103, 0, false, 39},
-		{600, 0, true, 92}, {600, 0, false, 92},
-		{600, 32, true, 124}, {600, 32, false, 35},
+		{"empty payload", 0, 0, true, 0},
+		{"table local threshold", 477, 0, true, 477},
+		{"table overflow threshold", 478, 0, true, 39},
+		{"index local threshold", 102, 0, false, 102},
+		{"index overflow threshold", 103, 0, false, 39},
+		{"table remainder", 600, 0, true, 92},
+		{"index remainder", 600, 0, false, 92},
+		{"table reserved space", 600, 32, true, 124},
+		{"index reserved space", 600, 32, false, 35},
 	} {
-		t.Run(fmt.Sprint(tc), func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			if got := localPayloadLen(tc.size, 512, tc.reserved, tc.table); got != tc.want {
 				t.Fatalf("got %d, want %d", got, tc.want)
 			}

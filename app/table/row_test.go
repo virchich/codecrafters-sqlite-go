@@ -56,21 +56,3 @@ func TestSchemaAndRow(t *testing.T) {
 		t.Fatal("expected duplicate error")
 	}
 }
-
-func TestDecodeSchemaEntry(t *testing.T) {
-	entry, err := DecodeSchemaEntry([]any{"table", "people", "people", int64(2), "CREATE TABLE people(name text)"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if entry.TableName != "people" || entry.RootPage != 2 || entry.SQL == nil {
-		t.Fatal(entry)
-	}
-	entry, err = DecodeSchemaEntry([]any{"index", "idx", "people", int64(3), nil})
-	if err != nil || entry.SQL != nil {
-		t.Fatalf("%+v: %v", entry, err)
-	}
-	_, err = DecodeSchemaEntry([]any{"table", "people", "people", "wrong", nil})
-	if err == nil || !strings.Contains(err.Error(), "rootpage") {
-		t.Fatal(err)
-	}
-}

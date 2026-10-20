@@ -31,12 +31,9 @@ func NewIndexInteriorCell(buf []byte, off int, dbh *DbHeader) (IndexInteriorCell
 	if err != nil {
 		return IndexInteriorCell{}, total, fmt.Errorf("index interior cell: decode payload size: %w", err)
 	}
-	if payloadSize > uint64(len(buf)-(off+total)) {
-		return IndexInteriorCell{}, total, fmt.Errorf("index interior cell: payload is not available locally: %w", io.ErrUnexpectedEOF)
-	}
 	c.PayloadSize = payloadSize
 
-	localLen := localPayloadLen(payloadSize, dbh.PageSize, dbh.ReservedBytes, true)
+	localLen := localPayloadLen(payloadSize, dbh.PageSize, dbh.ReservedBytes, false)
 	if localLen > uint64(len(buf)-(off+total)) {
 		return IndexInteriorCell{}, total,
 			fmt.Errorf("index interior cell: read local payload: %w", io.ErrUnexpectedEOF)

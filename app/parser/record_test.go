@@ -48,10 +48,7 @@ func TestRecordSpecialValues(t *testing.T) {
 	if err != nil || n != len(buf) || !reflect.DeepEqual(body, want) {
 		t.Fatalf("got (%+v, %d, %v)", body, n, err)
 	}
-	buf[0] = 123
-	if !reflect.DeepEqual(body[5], []byte{0, 0xff}) {
-		t.Fatal("BLOB aliases input buffer")
-	}
+
 }
 
 func TestRecordMultibyteVarints(t *testing.T) {

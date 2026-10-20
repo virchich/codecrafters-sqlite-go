@@ -16,9 +16,6 @@ func NewIndexLeafCell(buf []byte, off int, dbh *DbHeader) (IndexLeafCell, int, e
 	if off < 0 || off > len(buf) {
 		return IndexLeafCell{}, 0, fmt.Errorf("index leaf cell: invalid offset %d (buffer length %d)", off, len(buf))
 	}
-	if len(buf)-off < cellPageNumberLenBytes {
-		return IndexLeafCell{}, 0, fmt.Errorf("index leaf cell: read left child page number: %w", io.ErrUnexpectedEOF)
-	}
 
 	c := IndexLeafCell{}
 
