@@ -144,6 +144,8 @@ func TestDBStatsIndependentOfLookup(t *testing.T) {
 		{"index", "idx_apples", "apples", int64(3), "CREATE INDEX idx_apples ON apples(id)"},
 		{"table", "oranges", "oranges", int64(4), "CREATE TABLE oranges(id INTEGER)"},
 		{"view", "fruit", "fruit", int64(0), "CREATE VIEW fruit AS SELECT * FROM apples"},
+		{"table", "sqlite_sequence", "sqlite_sequence", int64(5), nil},
+		{"table", "SQLITE_internal", "SQLITE_internal", int64(6), nil},
 	})
 	for i := 0; i < 2; i++ {
 		if _, err := db.LookupTable("apples"); err != nil {

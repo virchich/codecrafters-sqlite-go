@@ -24,14 +24,6 @@ func Tables(databaseFilePath string) error {
 		return err
 	}
 
-	tblNames := make([]string, 0, len(dbStats.TableNames)-1)
-	for _, name := range dbStats.TableNames {
-		if strings.HasPrefix(name, "sqlite_") {
-			continue
-		}
-		tblNames = append(tblNames, name)
-	}
-
-	_, err = fmt.Println(strings.Join(tblNames, " "))
+	_, err = fmt.Println(strings.Join(dbStats.TableNames, " "))
 	return err
 }

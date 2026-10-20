@@ -56,6 +56,7 @@ func (db *DB) Close() error {
 	return db.file.Close()
 }
 
+// DBStats reports user tables, excluding SQLite internal tables.
 func (db *DB) DBStats() (DBInfo, error) {
 	cursor, err := db.NewTableCursor(1)
 	if err != nil {
@@ -74,7 +75,7 @@ func (db *DB) DBStats() (DBInfo, error) {
 		if err != nil {
 			return DBInfo{}, fmt.Errorf("database statistics: decode schema row %d: %w", record.RowID, err)
 		}
-		if entry.Type == table.TableEntry {
+		if entry.Type == table.TableEntry && !strings.HasPrefix(strings.ToLower(entry.Name), "sqlite_") {
 			info.TotalNumberOfTables++
 			info.TableNames = append(info.TableNames, entry.Name)
 		}

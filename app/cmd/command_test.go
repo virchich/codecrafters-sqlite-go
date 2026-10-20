@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -117,9 +116,9 @@ func TestMetadataCommands(t *testing.T) {
 			{"index", "idx_apples", "apples", int64(4), nil},
 			{"view", "fruit", "fruit", int64(0), nil},
 			{"table", "oranges", "oranges", int64(5), nil},
-		}, "apples oranges\n", 3},
+		}, "apples oranges\n", 2},
 		{"single", [][]any{{"table", "apples", "apples", int64(2), nil}}, "apples\n", 1},
-		{"internal only", [][]any{{"table", "sqlite_sequence", "sqlite_sequence", int64(2), nil}}, "\n", 1},
+		{"internal only", [][]any{{"table", "sqlite_sequence", "sqlite_sequence", int64(2), nil}}, "\n", 0},
 		{"empty", nil, "\n", 0},
 	} {
 		path := writeCommandDB(t, tc.schema)
