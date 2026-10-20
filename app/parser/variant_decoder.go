@@ -5,9 +5,9 @@ import (
 	"io"
 )
 
-// DecodeVariant decodes a SQLite varint at off and returns its raw 64-bit
+// decodeVariant decodes a SQLite variant at offset and returns its raw 64-bit
 // value and the number of bytes consumed. On error, the value is zero.
-func DecodeVariant(buf []byte, off int) (uint64, int, error) {
+func decodeVariant(buf []byte, off int) (uint64, int, error) {
 	if off < 0 || off > len(buf) {
 		return 0, 0, fmt.Errorf("sql_decoder.DecodeVariant(): offset is out of bounds")
 	}

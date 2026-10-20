@@ -69,7 +69,7 @@ func TestPageReadIgnoresCurrentCursor(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i, want := range []uint16{3, 7} {
-		page, err := NewPage(uint32(i+1), header.PageSize)
+		page, err := NewPage(uint32(i+1), &header)
 		if err != nil {
 			t.Fatal(err)
 		}

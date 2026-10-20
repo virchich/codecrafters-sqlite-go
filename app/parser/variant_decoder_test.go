@@ -29,7 +29,7 @@ func TestDecodeVariant(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, n, err := DecodeVariant(tt.buf, tt.off)
+			got, n, err := decodeVariant(tt.buf, tt.off)
 			if err != nil || got != tt.want || n != tt.n {
 				t.Fatalf("got (%d, %d, %v), want (%d, %d, nil)", got, n, err, tt.want, tt.n)
 			}
@@ -44,19 +44,19 @@ func TestDecodeVariantTruncated(t *testing.T) {
 		for i := range buf {
 			buf[i] = 0x80
 		}
-		value, n, err := DecodeVariant(buf, 0)
+		value, n, err := decodeVariant(buf, 0)
 		if value != 0 || n != length || !errors.Is(err, io.ErrUnexpectedEOF) {
 			t.Fatalf("length %d: got (%d, %d, %v)", length, value, n, err)
 		}
 	}
-	if _, n, err := DecodeVariant([]byte{1}, 1); n != 0 || !errors.Is(err, io.ErrUnexpectedEOF) {
+	if _, n, err := decodeVariant([]byte{1}, 1); n != 0 || !errors.Is(err, io.ErrUnexpectedEOF) {
 		t.Fatalf("offset at end: got (%d, %v)", n, err)
 	}
 }
 
 func TestDecodeVariantInvalidOffset(t *testing.T) {
 	for _, off := range []int{-1, 2, int(^uint(0) >> 1)} {
-		value, n, err := DecodeVariant([]byte{0}, off)
+		value, n, err := decodeVariant([]byte{0}, off)
 		if value != 0 || n != 0 || err == nil {
 			t.Fatalf("offset %d: got (%d, %d, %v)", off, value, n, err)
 		}

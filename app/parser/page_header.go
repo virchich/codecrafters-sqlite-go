@@ -18,29 +18,29 @@ const (
 	pageTypeOffset = 0
 	pageTypeLen    = 1
 
-	firstFreeblockStartOffset = 1
-	firstFreeblockStartLen    = 2
+	firstFreeBlockStartOffset   = 1
+	firstFreeBlockStartLenBytes = 2
 
-	numOfCellsOnPageOffset = 3
-	numOfCellsOnPageLen    = 2
+	numOfCellsOnPageOffset   = 3
+	numOfCellsOnPageLenBytes = 2
 
-	cellContentAreaStartOffset = 5
-	cellContentAreaStartLen    = 2
+	cellContentAreaStartOffset   = 5
+	cellContentAreaStartLenBytes = 2
 
-	fragmentedFreeBytesOffset = 7
-	fragmentedFreeBytesLen    = 1
+	fragmentedFreeBytesOffset   = 7
+	fragmentedFreeBytesLenBytes = 1
 
-	rightMostPointerOffset = 8
-	rightMostPointerLen    = 4
+	rightMostPointerOffset   = 8
+	rightMostPointerLenBytes = 4
 )
 
 type PageHeader struct {
-	PageType               uint8
+	CellContentAreaStart   uint32
+	RightMostPointer       uint32
 	FirstFreeblockStart    uint16
 	NumOfCellsOnPage       uint16
-	CellContentAreaStart   uint32
+	PageType               uint8
 	FragmentedFreeBytesNum uint8
-	RightMostPointer       uint32
 }
 
 // Parse expects a buffer starting at the beginning of the whole page.
@@ -73,9 +73,9 @@ func (h *PageHeader) Parse(pageNum uint32, buf []byte) (int, error) {
 
 	parsed := PageHeader{
 		PageType:               pageType,
-		FirstFreeblockStart:    binary.BigEndian.Uint16(header[firstFreeblockStartOffset : firstFreeblockStartOffset+firstFreeblockStartLen]),
-		NumOfCellsOnPage:       binary.BigEndian.Uint16(header[numOfCellsOnPageOffset : numOfCellsOnPageOffset+numOfCellsOnPageLen]),
-		CellContentAreaStart:   uint32(binary.BigEndian.Uint16(header[cellContentAreaStartOffset : cellContentAreaStartOffset+cellContentAreaStartLen])),
+		FirstFreeblockStart:    binary.BigEndian.Uint16(header[firstFreeBlockStartOffset : firstFreeBlockStartOffset+firstFreeBlockStartLenBytes]),
+		NumOfCellsOnPage:       binary.BigEndian.Uint16(header[numOfCellsOnPageOffset : numOfCellsOnPageOffset+numOfCellsOnPageLenBytes]),
+		CellContentAreaStart:   uint32(binary.BigEndian.Uint16(header[cellContentAreaStartOffset : cellContentAreaStartOffset+cellContentAreaStartLenBytes])),
 		FragmentedFreeBytesNum: header[fragmentedFreeBytesOffset],
 	}
 	// SQLite uses zero to represent an offset that cannot fit in two bytes.
@@ -83,7 +83,7 @@ func (h *PageHeader) Parse(pageNum uint32, buf []byte) (int, error) {
 		parsed.CellContentAreaStart = 65536
 	}
 	if headerSize == interiorPageHeaderSize {
-		parsed.RightMostPointer = binary.BigEndian.Uint32(header[rightMostPointerOffset : rightMostPointerOffset+rightMostPointerLen])
+		parsed.RightMostPointer = binary.BigEndian.Uint32(header[rightMostPointerOffset : rightMostPointerOffset+rightMostPointerLenBytes])
 	}
 	*h = parsed
 	return headerSize, nil
