@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -18,36 +17,19 @@ func run(args []string) (err error) {
 		return fmt.Errorf("unknown command %q", command)
 	}
 
-	databaseFile, err := openDatabase(databaseFilePath)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if closeErr := databaseFile.Close(); closeErr != nil {
-			err = errors.Join(err, fmt.Errorf("close database: %w", closeErr))
-		}
-	}()
-
 	switch command {
 	case ".dbinfo":
-		return cmd.Dbinfo(databaseFile)
+		return cmd.DBInfo(databaseFilePath)
 	case ".tables":
-		return cmd.Tables(databaseFile)
+		return cmd.Tables(databaseFilePath)
 	default:
-		return cmd.Sql(databaseFile, command)
+		return cmd.Sql(databaseFilePath, command)
 	}
-}
-
-// openDatabase opens a database for reading. The caller owns the returned file.
-func openDatabase(path string) (*os.File, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("open database: %w", err)
-	}
-	return file, nil
 }
 
 func handleError(err error) {
-	fmt.Fprintln(os.Stderr, err)
+	if _, e := fmt.Fprintln(os.Stderr, err); e != nil {
+		panic(e)
+	}
 	os.Exit(1)
 }

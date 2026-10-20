@@ -27,8 +27,13 @@ func IsSql(command string) bool {
 // TableDefinition preserves the metadata needed to interpret stored records.
 type TableDefinition struct {
 	Columns      []string
-	RowIDColumn  int // -1 means no declared column aliases rowid.
+	RowIDColumn  int // -1 means no declared column aliases rowId
 	WithoutRowID bool
+}
+
+type IndexDefinition struct {
+	TableName string
+	Columns   []string // Indexed columns in declared order
 }
 
 func ParseCreateTableSqlCommand(command string) (TableDefinition, error) {
@@ -71,5 +76,28 @@ func ParseCreateTableSqlCommand(command string) (TableDefinition, error) {
 			}
 		}
 	}
+	return definition, nil
+}
+
+func ParseCreateIndexSqlCommand(command string) (IndexDefinition, error) {
+	definition := IndexDefinition{}
+	stmt, err := parseStatement(command)
+	if err != nil {
+		return definition, err
+	}
+	ddl, ok := stmt.(*sql.CreateIndexStatement)
+	if !ok || len(ddl.Columns) == 0 {
+		return definition, fmt.Errorf("expected CREATE INDEX with column definitions")
+	}
+	definition.TableName = ddl.Table.Name
+	definition.Columns = make([]string, len(ddl.Columns))
+	for i, col := range ddl.Columns {
+		if name, ok := col.X.(*sql.Ident); ok {
+			definition.Columns[i] = name.Name
+		} else {
+			definition.Columns[i] = col.String()
+		}
+	}
+
 	return definition, nil
 }

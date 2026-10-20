@@ -2,52 +2,36 @@ package cmd
 
 import (
 	"fmt"
-	"io"
-	"os"
 	"strings"
 
 	"github.com/codecrafters-io/sqlite-starter-go/app/parser"
-	"github.com/codecrafters-io/sqlite-starter-go/app/table"
 )
 
-func Tables(databaseFile *os.File) error {
-	header := parser.DbHeader{}
-	if err := header.Parse(databaseFile); err != nil {
-		return fmt.Errorf("read database header: %w", err)
-	}
-
-	page, err := parser.NewPage(1, header.PageSize)
+func Tables(databaseFilePath string) error {
+	db, err := parser.Open(databaseFilePath)
 	if err != nil {
 		return err
 	}
-	if err := page.Parse(databaseFile); err != nil {
-		return fmt.Errorf("read schema page: %w", err)
+	defer func(db *parser.DB) {
+		err := db.Close()
+		if err != nil {
+			panic(err)
+		}
+	}(&db)
+
+	dbStats, err := db.DBStats()
+	if err != nil {
+		return err
 	}
 
-	tableNames := []string{}
-
-	for {
-		cell, err := page.GetNextTableLeafCell()
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			return err
-		}
-		entry, err := table.DecodeSchemaEntry(cell.Record.Body.Values)
-		if err != nil {
-			return err
-		}
-		if entry.Type != "table" {
+	tblNames := make([]string, 0, len(dbStats.TableNames)-1)
+	for _, name := range dbStats.TableNames {
+		if strings.HasPrefix(name, "sqlite_") {
 			continue
 		}
-		tableName := entry.TableName
-		if strings.HasPrefix(tableName, "sqlite_") {
-			continue
-		}
-		tableNames = append(tableNames, tableName)
+		tblNames = append(tblNames, name)
 	}
 
-	_, err = fmt.Println(strings.Join(tableNames, " "))
+	_, err = fmt.Println(strings.Join(tblNames, " "))
 	return err
 }

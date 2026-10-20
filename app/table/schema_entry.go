@@ -1,8 +1,15 @@
 package table
 
+type EntryType string
+
+const (
+	TableEntry EntryType = "table"
+	IndexEntry EntryType = "index"
+)
+
 // SchemaEntry describes an object in sqlite_schema. SQL is nil for NULL.
 type SchemaEntry struct {
-	Type      string
+	Type      EntryType
 	Name      string
 	TableName string
 	RootPage  int64
@@ -23,9 +30,11 @@ func DecodeSchemaEntry(values []any) (SchemaEntry, error) {
 		return SchemaEntry{}, err
 	}
 	var entry SchemaEntry
-	if entry.Type, err = row.String("type"); err != nil {
+	entryType, err := row.String("type")
+	if err != nil {
 		return SchemaEntry{}, err
 	}
+	entry.Type = EntryType(entryType)
 	if entry.Name, err = row.String("name"); err != nil {
 		return SchemaEntry{}, err
 	}

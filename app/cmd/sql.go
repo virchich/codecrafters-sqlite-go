@@ -5,188 +5,104 @@ import (
 	"fmt"
 	"io"
 	"math/big"
-	"os"
 	"strings"
 
 	"github.com/codecrafters-io/sqlite-starter-go/app/parser"
-	s "github.com/codecrafters-io/sqlite-starter-go/app/sql"
+	"github.com/codecrafters-io/sqlite-starter-go/app/sql"
 	"github.com/codecrafters-io/sqlite-starter-go/app/table"
 )
 
-func Sql(databaseFile *os.File, sql string) error {
-	dbHeader := parser.DbHeader{}
-	if err := dbHeader.Parse(databaseFile); err != nil {
-		return fmt.Errorf("read database header: %w", err)
-	}
-
-	page, err := parser.NewPage(1, dbHeader.PageSize)
+func Sql(databaseFilePath string, sqlString string) error {
+	db, err := parser.Open(databaseFilePath)
 	if err != nil {
 		return err
 	}
-	if err := page.Parse(databaseFile); err != nil {
-		return fmt.Errorf("read schema page: %w", err)
-	}
-
-	command, err := s.NewSqlLine(sql)
-	if err != nil {
-		return err
-	}
-
-	var tblPage int64
-	found := false
-	var definition s.TableDefinition
-
-	for {
-		cell, err := page.GetNextTableLeafCell()
+	defer func(db *parser.DB) {
+		err := db.Close()
 		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			return err
+			panic(err)
 		}
-		entry, err := table.DecodeSchemaEntry(cell.Record.Body.Values)
-		if err != nil {
-			return err
-		}
-		if entry.Type == "table" && entry.TableName == command.From {
-			found = true
-			tblPage = entry.RootPage
-			if entry.SQL == nil {
-				return fmt.Errorf("table %q has no CREATE TABLE SQL", command.From)
-			}
-			definition, err = s.ParseCreateTableSqlCommand(*entry.SQL)
-			if err != nil {
-				return err
-			}
-			break
-		}
-	}
+	}(&db)
 
-	if !found {
-		return fmt.Errorf("table %q does not exist", command.From)
-	}
-
-	if tblPage < 1 || tblPage > 1<<32-1 {
-		return fmt.Errorf("invalid root page: %d", tblPage)
-	}
-	requestedTablePage, err := parser.NewPage(uint32(tblPage), dbHeader.PageSize)
-	if err != nil {
-		return err
-	}
-	if err := requestedTablePage.Parse(databaseFile); err != nil {
-		return err
-	}
-
-	if definition.WithoutRowID {
-		return fmt.Errorf("table %q: WITHOUT ROWID tables are not supported", command.From)
-	}
-	schema, err := table.NewRowIDSchema(definition.Columns, definition.RowIDColumn)
+	s, err := sql.NewSqlLine(sqlString)
 	if err != nil {
 		return err
 	}
 
-	return executeTableQuery(requestedTablePage, schema, &command, dbHeader.PageSize, databaseFile)
-}
-
-// executeTableQuery owns aggregation so a multi-page query prints one result.
-func executeTableQuery(page parser.Page, schema *table.Schema, command *s.SqlLine, pageSize uint32, dbf *os.File) error {
-	count := 0
-	if err := iterateOverTable(page, schema, command, &count, pageSize, dbf); err != nil {
+	ti, err := db.LookupTable(s.From)
+	if err != nil {
 		return err
 	}
-	if strings.EqualFold(command.Select, "COUNT(*)") {
-		if _, err := fmt.Println(count); err != nil {
-			return fmt.Errorf("write count: %w", err)
-		}
+
+	if !ti.TableExists {
+		return fmt.Errorf("table %s does not exist", s.From)
 	}
-	return nil
+	if ti.TableDefinition.WithoutRowID {
+		return fmt.Errorf("table %q: WITHOUT ROWID tables are not supported", s.From)
+	}
+
+	schema, err := table.NewRowIDSchema(ti.TableDefinition.Columns, ti.TableDefinition.RowIDColumn)
+	if err != nil {
+		return err
+	}
+
+	c, err := db.NewTableCursor(ti.TableRootPage)
+	if err != nil {
+		return err
+	}
+
+	return executeTableQuery(c, schema, &s)
 }
 
-func iterateOverTable(page parser.Page, schema *table.Schema, command *s.SqlLine, count *int, pageSize uint32, dbf *os.File) error {
-	switch page.Header.PageType {
-	case parser.TableLeafPage:
-		return iterOverTableLeafCells(page, schema, command, count)
-	case parser.TableInteriorPage:
-		return iterateOverTableInteriorCells(page, schema, command, count, pageSize, dbf)
-	default:
-		return fmt.Errorf("cmd.iterateOverTable(): unsupported page type: %#x", page.Header.PageType)
-	}
-}
-
-func iterateOverTableInteriorCells(page parser.Page, schema *table.Schema, command *s.SqlLine, count *int, pageSize uint32, dbf *os.File) error {
-	visitChild := func(pageNumber uint32) error {
-		child, err := parser.NewPage(pageNumber, pageSize)
-		if err != nil {
-			return err
-		}
-		if err := child.Parse(dbf); err != nil {
-			return fmt.Errorf("read child page %d: %w", pageNumber, err)
-		}
-		return iterateOverTable(child, schema, command, count, pageSize, dbf)
-	}
-	for {
-		cell, err := page.GetNextTableInteriorCall()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-		if err := visitChild(cell.PageNumber); err != nil {
-			return err
-		}
-	}
-	// This final child lives in the page header, not in a cell.
-	return visitChild(page.Header.RightMostPointer)
-}
-
-func iterOverTableLeafCells(page parser.Page, schema *table.Schema, command *s.SqlLine, count *int) error {
+// executeTableQuery applies filtering before aggregation or projection.
+func executeTableQuery(c *parser.TableCursor, schema *table.Schema, s *sql.SqlLine) error {
+	onlyCount := strings.EqualFold(s.Select, "COUNT(*)")
 	filterIndex := -1
-	if command.Where != nil {
-		positions, err := schema.Resolve([]string{command.Where.Column})
+	if s.Where != nil {
+		positions, err := schema.Resolve([]string{s.Where.Column})
 		if err != nil {
 			return fmt.Errorf("WHERE clause: %w", err)
 		}
 		filterIndex = positions[0]
 	}
-	countOnly := strings.EqualFold(command.Select, "COUNT(*)")
 	var indices []int
-	var err error
-	if !countOnly {
-		columns := strings.Split(command.Select, ",")
-		if command.Select == "*" {
+	if !onlyCount {
+		columns := strings.Split(s.Select, ",")
+		if s.Select == "*" {
 			columns = schema.Columns()
 		}
+		var err error
 		indices, err = schema.Resolve(columns)
 		if err != nil {
 			return err
 		}
 	}
 
+	count := 0
 	for {
-		cell, err := page.GetNextTableLeafCell()
+		tr, err := c.Next()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
 			return err
 		}
-		row, err := table.NewRowWithRowID(schema, cell.Record.Body.Values, cell.Rowid)
+		row, err := table.NewRowWithRowID(schema, tr.Record.Body, tr.RowID)
 		if err != nil {
 			return err
 		}
-		if command.Where != nil {
+		if s.Where != nil {
 			value, _ := row.At(filterIndex)
-			matches, err := matchesWhere(value, command.Where)
+			matches, err := matchesWhere(value, s.Where)
 			if err != nil {
-				return fmt.Errorf("WHERE column %q: %w", command.Where.Column, err)
+				return fmt.Errorf("WHERE column %q: %w", s.Where.Column, err)
 			}
 			if !matches {
 				continue
 			}
 		}
-		if countOnly {
-			(*count)++
+		if onlyCount {
+			count++
 			continue
 		}
 		values := make([]string, len(indices))
@@ -198,7 +114,11 @@ func iterOverTableLeafCells(page parser.Page, schema *table.Schema, command *s.S
 			return fmt.Errorf("write row: %w", err)
 		}
 	}
-
+	if onlyCount {
+		if _, err := fmt.Println(count); err != nil {
+			return fmt.Errorf("write count: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -216,7 +136,7 @@ func formatValue(value any) string {
 
 // matchesWhere compares decoded values without converting numbers to strings.
 // NULL comparisons do not select rows. Text/numeric coercion is not supported.
-func matchesWhere(value any, where *s.WhereClause) (bool, error) {
+func matchesWhere(value any, where *sql.WhereClause) (bool, error) {
 	if value == nil || where.Value == nil {
 		return false, nil
 	}
@@ -245,17 +165,17 @@ func matchesWhere(value any, where *s.WhereClause) (bool, error) {
 		order = left.Cmp(right)
 	}
 	switch where.Operator {
-	case s.Equal:
+	case sql.Equal:
 		return order == 0, nil
-	case s.NotEqual:
+	case sql.NotEqual:
 		return order != 0, nil
-	case s.LessThan:
+	case sql.LessThan:
 		return order < 0, nil
-	case s.LessThanOrEqual:
+	case sql.LessThanOrEqual:
 		return order <= 0, nil
-	case s.GreaterThan:
+	case sql.GreaterThan:
 		return order > 0, nil
-	case s.GreaterThanOrEqual:
+	case sql.GreaterThanOrEqual:
 		return order >= 0, nil
 	default:
 		return false, fmt.Errorf("unsupported operator %q", where.Operator)
