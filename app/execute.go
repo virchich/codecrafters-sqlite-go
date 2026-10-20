@@ -8,6 +8,7 @@ import (
 	"github.com/codecrafters-io/sqlite-starter-go/app/cmd"
 )
 
+// run dispatches a database path and command, returning errors to the entry point.
 func run(args []string) (err error) {
 	if len(args) != 2 {
 		return fmt.Errorf("usage: %s <database> <command>", os.Args[0])
@@ -27,6 +28,7 @@ func run(args []string) (err error) {
 	}
 }
 
+// handleError reports an error to stderr and exits with a nonzero status.
 func handleError(err error) {
 	if _, e := fmt.Fprintln(os.Stderr, err); e != nil {
 		panic(e)

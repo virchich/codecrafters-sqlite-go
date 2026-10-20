@@ -5,10 +5,14 @@ import (
 	"io"
 )
 
+// TableRecord combines a decoded record with its signed table rowid.
 type TableRecord struct {
 	RowID  int64
 	Record Record
 }
+
+// TableCursor scans a table B-tree in rowid order and assembles overflow records.
+// It maintains its own traversal state and is not safe for concurrent use.
 type TableCursor struct {
 	db        *DB
 	stack     []frame
@@ -17,11 +21,14 @@ type TableCursor struct {
 	failure   error
 }
 
+// frame tracks an interior page and its next unvisited child, including the rightmost child.
 type frame struct {
 	page      Page
 	nextChild int
 }
 
+// NewTableCursor positions a scan at the leftmost leaf of a table B-tree.
+// db must remain open for the lifetime of the cursor.
 func NewTableCursor(rootPage uint32, db *DB) (TableCursor, error) {
 	if rootPage == 0 {
 		return TableCursor{}, fmt.Errorf("table cursor: invalid root page: %d", rootPage)
@@ -40,6 +47,7 @@ func NewTableCursor(rootPage uint32, db *DB) (TableCursor, error) {
 	return c, nil
 }
 
+// descendToLeaf follows leftmost children, saving parents for later traversal.
 func (c *TableCursor) descendToLeaf(pageNumber uint32) error {
 	for {
 		for _, ancestor := range c.stack {
@@ -77,6 +85,7 @@ func (c *TableCursor) descendToLeaf(pageNumber uint32) error {
 	}
 }
 
+// advanceToNextLeaf visits the next unvisited subtree, or returns io.EOF.
 func (c *TableCursor) advanceToNextLeaf() error {
 	for len(c.stack) > 0 {
 		top := &c.stack[len(c.stack)-1]
@@ -104,8 +113,8 @@ func (c *TableCursor) advanceToNextLeaf() error {
 	return io.EOF
 }
 
-// Next returns the next table record in rowId order. After a failure, subsequent
-// calls return that failure rather than silently skipping the damaged record.
+// Next returns the next decoded record in rowid order, or io.EOF after the scan.
+// After a failure, subsequent calls return that failure instead of skipping it.
 func (c *TableCursor) Next() (TableRecord, error) {
 	if c.failure != nil {
 		return TableRecord{}, c.failure

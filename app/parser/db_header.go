@@ -7,6 +7,7 @@ import (
 	"os"
 )
 
+// DbHeaderSizeBytes is the size of the header at the start of a database file.
 const DbHeaderSizeBytes = 100
 
 const minUsablePageSize = 480
@@ -19,6 +20,7 @@ const (
 	dbReservedBytesLenBytes          = 1
 )
 
+// DbHeader holds the file-header fields used to read pages.
 type DbHeader struct {
 	MagicHeaderString      string
 	PageSize               uint32
@@ -27,6 +29,8 @@ type DbHeader struct {
 	ReservedBytes          uint8
 }
 
+// Parse reads the header from the current file position and validates page and
+// usable sizes. The caller must position dbf at the start of the database.
 func (h *DbHeader) Parse(dbf *os.File) error {
 	buf := make([]byte, DbHeaderSizeBytes)
 

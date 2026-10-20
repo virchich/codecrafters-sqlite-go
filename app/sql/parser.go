@@ -19,6 +19,8 @@ func parseStatement(command string) (sql.Statement, error) {
 	return statements[0], nil
 }
 
+// IsSql reports whether command parses as exactly one SQL statement.
+// It does not check whether the query executor supports that statement.
 func IsSql(command string) bool {
 	_, err := parseStatement(command)
 	return err == nil
@@ -31,11 +33,15 @@ type TableDefinition struct {
 	WithoutRowID bool
 }
 
+// IndexDefinition holds a table name and ordered index terms. It is metadata,
+// not a query plan; sort direction and partial-index predicates are not retained.
 type IndexDefinition struct {
 	TableName string
 	Columns   []string // Indexed columns in declared order
 }
 
+// ParseCreateTableSqlCommand extracts column order, the rowid alias, and the
+// WITHOUT ROWID flag from a CREATE TABLE statement with column definitions.
 func ParseCreateTableSqlCommand(command string) (TableDefinition, error) {
 	definition := TableDefinition{RowIDColumn: -1}
 	stmt, err := parseStatement(command)
@@ -79,6 +85,8 @@ func ParseCreateTableSqlCommand(command string) (TableDefinition, error) {
 	return definition, nil
 }
 
+// ParseCreateIndexSqlCommand extracts the table and ordered terms of CREATE INDEX.
+// Plain columns use identifier names; other expressions retain their SQL text.
 func ParseCreateIndexSqlCommand(command string) (IndexDefinition, error) {
 	definition := IndexDefinition{}
 	stmt, err := parseStatement(command)

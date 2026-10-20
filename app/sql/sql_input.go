@@ -8,6 +8,7 @@ import (
 	sqlparser "github.com/rqlite/sql"
 )
 
+// SqlLine represents a single-table SELECT supported by the query executor.
 type SqlLine struct {
 	Select string
 	From   string
@@ -35,6 +36,8 @@ type WhereClause struct {
 	Value    any
 }
 
+// NewSqlLine parses one SELECT with a column list, star, or COUNT(*), and an
+// optional column-to-literal comparison. Unsupported query clauses return errors.
 func NewSqlLine(command string) (SqlLine, error) {
 	stmt, err := parseStatement(command)
 	if err != nil {
@@ -83,6 +86,7 @@ func NewSqlLine(command string) (SqlLine, error) {
 	return sl, nil
 }
 
+// parseWhere accepts one column-to-literal comparison, optionally parenthesized.
 func parseWhere(expr sqlparser.Expr) (*WhereClause, error) {
 	if group, ok := expr.(*sqlparser.ParenExpr); ok {
 		return parseWhere(group.X)
@@ -108,6 +112,7 @@ func parseWhere(expr sqlparser.Expr) (*WhereClause, error) {
 	return &WhereClause{Column: column.Name, Operator: operator, Value: value}, nil
 }
 
+// searchValue converts a SQL literal into a Go value without applying type affinity.
 func searchValue(expr sqlparser.Expr) (any, error) {
 	switch value := expr.(type) {
 	case *sqlparser.NullLit:
@@ -126,6 +131,7 @@ func searchValue(expr sqlparser.Expr) (any, error) {
 	return nil, fmt.Errorf("expected a string, number, or NULL search value")
 }
 
+// parseNumber decodes integer literals as int64 and decimal or exponent forms as float64.
 func parseNumber(value string) (any, error) {
 	if strings.ContainsAny(value, ".eE") {
 		return strconv.ParseFloat(value, 64)

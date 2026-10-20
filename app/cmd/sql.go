@@ -12,6 +12,8 @@ import (
 	"github.com/codecrafters-io/sqlite-starter-go/app/table"
 )
 
+// Sql executes a supported SELECT using a table scan and writes results to stdout.
+// Rows are pipe-separated; COUNT(*) prints one number.
 func Sql(databaseFilePath string, sqlString string) error {
 	db, err := parser.Open(databaseFilePath)
 	if err != nil {
@@ -182,7 +184,8 @@ func matchesWhere(value any, where *sql.WhereClause) (bool, error) {
 	}
 }
 
-// Exact numeric conversion avoids rounding int64 values when comparing to floats.
+// numericValue represents a number exactly for mixed integer/float comparisons.
+// It returns nil for unsupported values or non-finite floats.
 func numericValue(value any) *big.Rat {
 	switch value := value.(type) {
 	case int64:

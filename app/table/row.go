@@ -14,6 +14,8 @@ type Schema struct {
 	hasRowID    bool
 }
 
+// NewSchema copies column names and builds a case-insensitive lookup.
+// Duplicate names are rejected.
 func NewSchema(columns []string) (*Schema, error) {
 	s := &Schema{columns: append([]string(nil), columns...), index: make(map[string]int, len(columns)), rowIDColumn: -1}
 	for i, name := range columns {
@@ -64,6 +66,7 @@ func (s *Schema) Resolve(names []string) ([]int, error) {
 	return indices, nil
 }
 
+// Row provides schema-aware access to decoded values and an optional rowid.
 type Row struct {
 	schema *Schema
 	values []any
@@ -81,6 +84,7 @@ func NewRowWithRowID(schema *Schema, values []any, rowID int64) (Row, error) {
 	return newRow(schema, values, rowID, true)
 }
 
+// newRow validates the schema and record width before borrowing values.
 func newRow(schema *Schema, values []any, rowID int64, supplied bool) (Row, error) {
 	if schema == nil {
 		return Row{}, fmt.Errorf("row requires a schema")
@@ -106,6 +110,8 @@ func (r Row) Get(name string) (any, bool) {
 	return r.At(index)
 }
 
+// At returns a value by resolved position, substituting the rowid for its alias.
+// The boolean is false for an invalid position.
 func (r Row) At(index int) (any, bool) {
 	if r.schema != nil && r.schema.hasRowID && (index == len(r.values) || (index >= 0 && index == r.schema.rowIDColumn)) {
 		return r.rowID, true
@@ -116,6 +122,7 @@ func (r Row) At(index int) (any, bool) {
 	return r.values[index], true
 }
 
+// String returns a named string value, or an error for a missing column or other type.
 func (r Row) String(name string) (string, error) {
 	value, ok := r.Get(name)
 	if !ok {
@@ -128,6 +135,7 @@ func (r Row) String(name string) (string, error) {
 	return text, nil
 }
 
+// Int64 returns a named int64 value, or an error for a missing column or other type.
 func (r Row) Int64(name string) (int64, error) {
 	value, ok := r.Get(name)
 	if !ok {

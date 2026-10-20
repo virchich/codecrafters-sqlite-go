@@ -7,16 +7,19 @@ import (
 	"math"
 )
 
+// Record contains decoded values in storage order, without column names.
 type Record struct {
 	Header RecordHeader
 	Body   []any
 }
 
+// RecordHeader describes the header size and each stored value's serial type.
 type RecordHeader struct {
 	Size        uint64
 	SerialTypes []SerialType
 }
 
+// SerialType identifies a stored value's representation and byte length.
 type SerialType uint64
 
 const (
@@ -42,7 +45,7 @@ const (
 // ParseRecord decodes exactly one complete record payload starting at offset zero.
 // The caller must assemble any overflow bytes before calling ParseRecord.
 // Truncated records and trailing bytes are rejected. Returned values do not
-// retain references to payload.
+// retain references to payload. Text is interpreted as UTF-8.
 func ParseRecord(payload []byte) (Record, error) {
 	header, n, err := readRecordHeader(payload, 0)
 	if err != nil {
@@ -59,6 +62,7 @@ func ParseRecord(payload []byte) (Record, error) {
 	return Record{Header: header, Body: body}, nil
 }
 
+// readRecordHeader decodes the header and returns bytes consumed from off.
 func readRecordHeader(buf []byte, off int) (RecordHeader, int, error) {
 	headerSize, total, err := decodeVariant(buf, off)
 	if err != nil {
@@ -83,6 +87,7 @@ func readRecordHeader(buf []byte, off int) (RecordHeader, int, error) {
 	return RecordHeader{Size: headerSize, SerialTypes: serialTypes}, total, nil
 }
 
+// readRecordBody decodes values using serialTypes and returns bytes consumed from off.
 func readRecordBody(buf []byte, off int, serialTypes []SerialType) ([]any, int, error) {
 	if off < 0 || off > len(buf) {
 		return nil, 0, fmt.Errorf("offset is out of bounds")

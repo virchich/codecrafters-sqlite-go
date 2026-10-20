@@ -10,16 +10,20 @@ import (
 	"github.com/codecrafters-io/sqlite-starter-go/app/table"
 )
 
+// DB owns a read-only database file and its parsed header. Keep it open while
+// cursors are in use, and do not modify Header after opening.
 type DB struct {
 	file   *os.File
 	Header DbHeader
 }
 
+// DBInfo lists user tables; SQLite internal tables are excluded.
 type DBInfo struct {
 	TotalNumberOfTables int
 	TableNames          []string
 }
 
+// TableInfo contains a table root, its schema, and explicit index metadata.
 type TableInfo struct {
 	TableExists     bool
 	TableRootPage   uint32
@@ -27,11 +31,14 @@ type TableInfo struct {
 	IndexInfo       []IndexInfo
 }
 
+// IndexInfo associates a parsed index definition with its B-tree root.
 type IndexInfo struct {
 	IndexRootPage    uint32
 	IndexDefinitions sql.IndexDefinition
 }
 
+// Open opens a database read-only and reads its header. The caller must Close
+// the returned DB. Only the main database file is read; WAL files are not applied.
 func Open(path string) (DB, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -52,6 +59,7 @@ func Open(path string) (DB, error) {
 	}, nil
 }
 
+// Close releases the database file. Existing cursors must no longer be used.
 func (db *DB) Close() error {
 	return db.file.Close()
 }
@@ -151,6 +159,7 @@ func (db *DB) LookupTable(name string) (TableInfo, error) {
 	return ti, nil
 }
 
+// NewTableCursor creates an independent table scan rooted at rootPage.
 func (db *DB) NewTableCursor(rootPage uint32) (*TableCursor, error) {
 	c, err := NewTableCursor(rootPage, db)
 	if err != nil {

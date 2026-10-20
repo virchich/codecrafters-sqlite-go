@@ -6,6 +6,7 @@ import (
 	"github.com/codecrafters-io/sqlite-starter-go/app/parser"
 )
 
+// DBInfo writes the page size and user-table count to stdout.
 func DBInfo(databaseFilePath string) error {
 	db, err := parser.Open(databaseFilePath)
 	if err != nil {

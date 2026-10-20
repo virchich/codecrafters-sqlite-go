@@ -6,11 +6,14 @@ import (
 	"io"
 )
 
+// TableInteriorCell holds the fields of a table interior cell.
 type TableInteriorCell struct {
 	PageNumber uint32
 	RowId      uint64
 }
 
+// NewTableInteriorCell decodes a table interior cell at off and returns bytes consumed,
+// including bytes read before an error. RowId retains the raw unsigned varint bits.
 func NewTableInteriorCell(buf []byte, off int) (TableInteriorCell, int, error) {
 	if off < 0 || off > len(buf) {
 		return TableInteriorCell{}, 0, fmt.Errorf("table interior cell: invalid offset %d (buffer length %d)", off, len(buf))

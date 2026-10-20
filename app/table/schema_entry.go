@@ -1,5 +1,6 @@
 package table
 
+// EntryType identifies an object kind in sqlite_schema.
 type EntryType string
 
 const (
@@ -24,6 +25,8 @@ var catalogSchema = func() *Schema {
 	return schema
 }()
 
+// DecodeSchemaEntry interprets the five sqlite_schema values, validating their
+// types and preserving a NULL SQL field as nil.
 func DecodeSchemaEntry(values []any) (SchemaEntry, error) {
 	row, err := NewRow(catalogSchema, values)
 	if err != nil {

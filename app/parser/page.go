@@ -7,6 +7,8 @@ import (
 	"os"
 )
 
+// Page owns a B-tree page buffer and a shared cell-iteration position.
+// Cell payload slices borrow the buffer and are invalidated by another Parse.
 type Page struct {
 	dbHeader    *DbHeader
 	pageNum     uint32
@@ -16,6 +18,8 @@ type Page struct {
 	buf         []byte
 }
 
+// NewPage allocates a buffer for a one-based page number without reading it.
+// dbh must remain unchanged for the lifetime of the page.
 func NewPage(pageNum uint32, dbh *DbHeader) (Page, error) {
 	if pageNum == 0 {
 		return Page{}, fmt.Errorf("page: invalid page number 0 (page numbers start at 1)")
@@ -38,6 +42,8 @@ func NewPage(pageNum uint32, dbh *DbHeader) (Page, error) {
 	}, nil
 }
 
+// Parse reads the page and resets cell iteration without changing the file
+// position. The page must not be used if parsing fails.
 func (p *Page) Parse(dbf *os.File) error {
 	// Invalidate iteration before replacing the buffer, including on read errors.
 	p.cellPointer = nil
@@ -65,6 +71,7 @@ func (p *Page) Parse(dbf *os.File) error {
 	return nil
 }
 
+// getCellPointerArray decodes cell offsets in key order.
 func (p *Page) getCellPointerArray(buf []byte, off int, numOfCells uint16) ([]uint16, error) {
 	if off < 0 || off > len(buf) {
 		return nil, fmt.Errorf("invalid cell pointer array offset %d (buffer length %d)", off, len(buf))
@@ -119,6 +126,8 @@ func (p *Page) currentCellOffset(expectedPageType uint8) (int, error) {
 	return pointer, nil
 }
 
+// GetNextTableLeafCell reads the next table leaf cell in pointer-array order.
+// It returns io.EOF at the end and advances only after successful parsing.
 func (p *Page) GetNextTableLeafCell() (TableLeafCell, error) {
 	pointer, err := p.currentCellOffset(TableLeafPage)
 	if err != nil {
@@ -132,6 +141,8 @@ func (p *Page) GetNextTableLeafCell() (TableLeafCell, error) {
 	return cell, nil
 }
 
+// GetNextTableInteriorCell reads the next table interior cell in pointer-array order.
+// It returns io.EOF at the end and advances only after successful parsing.
 func (p *Page) GetNextTableInteriorCell() (TableInteriorCell, error) {
 	pointer, err := p.currentCellOffset(TableInteriorPage)
 	if err != nil {
@@ -145,6 +156,8 @@ func (p *Page) GetNextTableInteriorCell() (TableInteriorCell, error) {
 	return cell, nil
 }
 
+// GetNextIndexInteriorCell reads the next index interior cell in pointer-array order.
+// It returns io.EOF at the end and advances only after successful parsing.
 func (p *Page) GetNextIndexInteriorCell() (IndexInteriorCell, error) {
 	pointer, err := p.currentCellOffset(IndexInteriorPage)
 	if err != nil {
@@ -158,6 +171,8 @@ func (p *Page) GetNextIndexInteriorCell() (IndexInteriorCell, error) {
 	return cell, nil
 }
 
+// GetNextIndexLeafCell reads the next index leaf cell in pointer-array order.
+// It returns io.EOF at the end and advances only after successful parsing.
 func (p *Page) GetNextIndexLeafCell() (IndexLeafCell, error) {
 	pointer, err := p.currentCellOffset(IndexLeafPage)
 	if err != nil {

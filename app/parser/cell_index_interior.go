@@ -6,6 +6,7 @@ import (
 	"io"
 )
 
+// IndexInteriorCell holds the fields of a index interior cell.
 type IndexInteriorCell struct {
 	LocalPayload       []byte
 	PayloadSize        uint64
@@ -13,6 +14,9 @@ type IndexInteriorCell struct {
 	OverflowPageNumber uint32
 }
 
+// NewIndexInteriorCell decodes a index interior cell at off and returns bytes consumed,
+// including bytes read before an error. LocalPayload borrows buf; overflow pages
+// are not read. dbh must contain validated page parameters.
 func NewIndexInteriorCell(buf []byte, off int, dbh *DbHeader) (IndexInteriorCell, int, error) {
 	if off < 0 || off > len(buf) {
 		return IndexInteriorCell{}, 0, fmt.Errorf("index interior cell: invalid offset %d (buffer length %d)", off, len(buf))

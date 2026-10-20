@@ -34,6 +34,7 @@ const (
 	rightMostPointerLenBytes = 4
 )
 
+// PageHeader describes a B-tree page. RightMostPointer is used only by interior pages.
 type PageHeader struct {
 	CellContentAreaStart   uint32
 	RightMostPointer       uint32
@@ -43,7 +44,8 @@ type PageHeader struct {
 	FragmentedFreeBytesNum uint8
 }
 
-// Parse expects a buffer starting at the beginning of the whole page.
+// Parse decodes a header from a complete page buffer, accounting for page 1
+// metadata. It returns the B-tree header size, excluding the database header.
 func (h *PageHeader) Parse(pageNum uint32, buf []byte) (int, error) {
 	if pageNum == 0 {
 		return 0, fmt.Errorf("page_header.Parse(): page numbers start at 1")

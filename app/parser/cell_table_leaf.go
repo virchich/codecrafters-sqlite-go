@@ -6,6 +6,7 @@ import (
 	"io"
 )
 
+// TableLeafCell holds the fields of a table leaf cell.
 type TableLeafCell struct {
 	PayloadSize        uint64
 	RowId              uint64
@@ -13,6 +14,9 @@ type TableLeafCell struct {
 	OverflowPageNumber uint32
 }
 
+// NewTableLeafCell decodes a table leaf cell at off and returns bytes consumed,
+// including bytes read before an error. LocalPayload borrows buf; overflow pages
+// are not read. dbh must contain validated page parameters.
 func NewTableLeafCell(buf []byte, off int, dbh *DbHeader) (TableLeafCell, int, error) {
 	if off < 0 || off > len(buf) {
 		return TableLeafCell{}, 0, fmt.Errorf("table leaf cell: invalid offset %d (buffer length %d)", off, len(buf))

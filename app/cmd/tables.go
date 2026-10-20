@@ -7,6 +7,8 @@ import (
 	"github.com/codecrafters-io/sqlite-starter-go/app/parser"
 )
 
+// Tables writes space-separated user table names and a newline to stdout.
+// Names starting with sqlite_ are excluded.
 func Tables(databaseFilePath string) error {
 	db, err := parser.Open(databaseFilePath)
 	if err != nil {
