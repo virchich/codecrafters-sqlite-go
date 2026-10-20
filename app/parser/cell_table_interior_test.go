@@ -21,7 +21,7 @@ func TestTableInteriorCell(t *testing.T) {
 			buf := append([]byte{99, 99, 99, 1, 2, 3, 4}, tc.key...)
 			buf = append(buf, 88)
 			cell, n, err := NewTableInteriorCell(buf, 3)
-			if err != nil || cell.PageNumber != 0x01020304 || cell.Rowid != tc.want || n != 4+len(tc.key) {
+			if err != nil || cell.PageNumber != 0x01020304 || cell.RowId != tc.want || n != 4+len(tc.key) {
 				t.Fatalf("cell=%+v bytes=%d err=%v", cell, n, err)
 			}
 		})
