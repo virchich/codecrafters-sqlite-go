@@ -1,76 +1,56 @@
-[![progress-banner](https://backend.codecrafters.io/progress/sqlite/33f67f62-bb08-405f-a3dd-777f040115ba)](https://app.codecrafters.io/users/raccoon-353?r=2qF)
+# SQLite reader in Go
 
-This is a starting point for Go solutions to the
-["Build Your Own SQLite" Challenge](https://codecrafters.io/challenges/sqlite).
+A read-only SQLite file reader built for the [CodeCrafters “Build Your Own SQLite” challenge](https://codecrafters.io/challenges/sqlite).
 
-In this challenge, you'll build a barebones SQLite implementation that supports
-basic SQL queries like `SELECT`. Along the way we'll learn about
-[SQLite's file format](https://www.sqlite.org/fileformat.html), how indexed data
-is
-[stored in B-trees](https://jvns.ca/blog/2014/10/02/how-does-sqlite-work-part-2-btrees/)
-and more.
+The project reads database pages directly: it decodes records, traverses table B-trees, follows overflow chains, and evaluates a small subset of SQL. SQL syntax parsing uses `github.com/rqlite/sql`; storage access and query execution are implemented here.
 
-**Note**: If you're viewing this repo on GitHub, head over to
-[codecrafters.io](https://codecrafters.io) to try the challenge.
+## Supported behavior
 
-# Passing the first stage
+- `.dbinfo`: database page size and user-table count.
+- `.tables`: space-separated user table names. Both commands exclude `sqlite_` tables.
+- Single-table `SELECT` with named columns, `*`, or `COUNT(*)`.
+- One optional `WHERE` comparison: `=`, `!=`, `<`, `<=`, `>`, or `>=`, with a column on the left and a literal on the right.
+- Table scans across interior and leaf pages, including overflow records and integer-primary-key rowid aliases.
 
-The entry point for your SQLite implementation is in `app/main.go`. Study and
-uncomment the relevant code, and then run the command below to execute the tests
-on our servers:
+Rows are printed with `|` separators and no column headings. NULL values appear as empty fields; an empty count prints `0`.
 
-```sh
-codecrafters submit
-```
+## Run
 
-Time to move on to the next stage!
-
-# Stage 2 & beyond
-
-Note: This section is for stages 2 and beyond.
-
-1. Ensure you have `go (1.27)` installed locally
-1. Run `./your_program.sh` to run your program, which is implemented in
-   `app/main.go`.
-1. Run `codecrafters submit` to submit your solution to CodeCrafters. Test
-   output will be streamed to your terminal.
-
-# Sample Databases
-
-To make it easy to test queries locally, we've added a sample database in the
-root of this repository: `sample.db`.
-
-This contains two tables: `apples` & `oranges`. You can use this to test your
-implementation for the first 6 stages.
-
-You can explore this database by running queries against it like this:
+Requires Go 1.27 or later, as specified in `go.mod`.
 
 ```sh
-$ sqlite3 sample.db "select id, name from apples"
-1|Granny Smith
-2|Fuji
-3|Honeycrisp
-4|Golden Delicious
+./your_program.sh sample.db .dbinfo
+./your_program.sh sample.db .tables
+./your_program.sh sample.db "SELECT id, name FROM apples"
+./your_program.sh sample.db "SELECT COUNT(*) FROM apples WHERE name = 'Fuji'"
 ```
 
-There are two other databases that you can use:
+The included `sample.db` contains the user tables `apples` and `oranges`. Larger challenge fixtures can be downloaded with `./download_sample_databases.sh`; they are not needed for tests.
 
-1. `superheroes.db`:
-   - This is a small version of the test database used in the table-scan stage.
-   - It contains one table: `superheroes`.
-   - It is ~1MB in size.
-1. `companies.db`:
-   - This is a small version of the test database used in the index-scan stage.
-   - It contains one table: `companies`, and one index: `idx_companies_country`
-   - It is ~7MB in size.
+## Code layout
 
-These aren't included in the repository because they're large in size. You can
-download them by running this script:
+| Package | Responsibility |
+| --- | --- |
+| `app/cmd` | Commands, filtering, projection, aggregation, and output |
+| `app/sql` | SQL parsing and extraction of supported query/schema metadata |
+| `app/parser` | Database headers, pages, cells, records, overflow assembly, and table cursors |
+| `app/table` | Column lookup, rowid resolution, and schema-entry interpretation |
+
+A table cursor returns a decoded record and its rowid. Command code applies a schema and evaluates the query without handling page bytes.
+
+## Tests
 
 ```sh
-./download_sample_databases.sh
+go test ./...
+go vet ./...
 ```
 
-If the script doesn't work for some reason, you can download the databases
-directly from
-[codecrafters-io/sample-sqlite-databases](https://github.com/codecrafters-io/sample-sqlite-databases).
+Tests use small synthetic database fixtures. They cover binary decoding, page boundaries, traversal, overflow-chain failures, SQL parsing, and command output without requiring the SQLite CLI.
+
+## Scope and remaining work
+
+Queries currently use full table scans. Index metadata and cell parsing are present; index traversal, lookup by rowid, and index selection remain to be implemented.
+
+This is a learning implementation, not a replacement for SQLite. It supports UTF-8 rowid tables and reads only the main database file. Use database files that are not being modified and do not depend on an unapplied WAL or journal. Writes, recovery, `WITHOUT ROWID` tables, joins, sorting, and general SQL expressions are outside the current scope. Comparisons do not implement SQLite type affinity or custom collations.
+
+Records are assembled in memory before decoding, so large records can require substantial memory.
