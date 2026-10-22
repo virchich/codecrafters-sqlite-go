@@ -5,13 +5,13 @@ import (
 	"io"
 )
 
-// TableRecord combines a decoded record with its signed table rowid.
+// TableRecord combines a decoded record with its signed table rowId.
 type TableRecord struct {
 	RowID  int64
 	Record Record
 }
 
-// TableCursor scans a table B-tree in rowid order and assembles overflow records.
+// TableCursor scans a table B-tree in rowId order and assembles overflow records.
 // It maintains its own traversal state and is not safe for concurrent use.
 type TableCursor struct {
 	db        *DB
@@ -25,6 +25,7 @@ type TableCursor struct {
 type frame struct {
 	page      Page
 	nextChild int
+	rowID     int64
 }
 
 // NewTableCursor positions a scan at the leftmost leaf of a table B-tree.
@@ -38,12 +39,9 @@ func NewTableCursor(rootPage uint32, db *DB) (TableCursor, error) {
 	}
 
 	c := TableCursor{db: db}
-	pageNumber := rootPage
-
-	if err := c.descendToLeaf(pageNumber); err != nil {
+	if err := c.descendToLeaf(rootPage); err != nil {
 		return TableCursor{}, fmt.Errorf("table cursor: initialize root page %d: %w", rootPage, err)
 	}
-
 	return c, nil
 }
 
@@ -55,6 +53,7 @@ func (c *TableCursor) descendToLeaf(pageNumber uint32) error {
 				return fmt.Errorf("table cursor: cycle through interior page %d", pageNumber)
 			}
 		}
+
 		p, err := NewPage(pageNumber, &c.db.Header)
 		if err != nil {
 			return fmt.Errorf("table cursor: descend to page %d: %w", pageNumber, err)
@@ -62,6 +61,7 @@ func (c *TableCursor) descendToLeaf(pageNumber uint32) error {
 		if err := p.Parse(c.db.file); err != nil {
 			return fmt.Errorf("table cursor: descend to page %d: %w", pageNumber, err)
 		}
+
 		switch p.Header.PageType {
 		case TableLeafPage:
 			c.leaf = &p
@@ -78,7 +78,7 @@ func (c *TableCursor) descendToLeaf(pageNumber uint32) error {
 				pageNumber = cell.PageNumber
 			}
 			// Save the updated page iterator; child zero has been entered.
-			c.stack = append(c.stack, frame{page: p, nextChild: 1})
+			c.stack = append(c.stack, frame{page: p, nextChild: 1, rowID: int64(cell.RowId)})
 		default:
 			return fmt.Errorf("table cursor: page %d: expected table page, got %#x", p.pageNum, p.Header.PageType)
 		}
@@ -113,7 +113,7 @@ func (c *TableCursor) advanceToNextLeaf() error {
 	return io.EOF
 }
 
-// Next returns the next decoded record in rowid order, or io.EOF after the scan.
+// Next returns the next decoded record in rowId order, or io.EOF after the scan.
 // After a failure, subsequent calls return that failure instead of skipping it.
 func (c *TableCursor) Next() (TableRecord, error) {
 	if c.failure != nil {

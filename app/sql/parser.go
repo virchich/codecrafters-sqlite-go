@@ -28,16 +28,20 @@ func IsSql(command string) bool {
 
 // TableDefinition preserves the metadata needed to interpret stored records.
 type TableDefinition struct {
-	Columns      []string
-	RowIDColumn  int // -1 means no declared column aliases rowId
-	WithoutRowID bool
+	Columns          []string
+	RowIDColumn      int // -1 means no declared column aliases rowId
+	WithoutRowID     bool
+	ColumnCollations map[string]string // Declared collations, keyed by column name.
 }
 
-// IndexDefinition holds a table name and ordered index terms. It is metadata,
-// not a query plan; sort direction and partial-index predicates are not retained.
+// IndexDefinition retains the metadata needed to choose a supported index.
 type IndexDefinition struct {
-	TableName string
-	Columns   []string // Indexed columns in declared order
+	TableName       string
+	Columns         []string // Indexed columns in declared order
+	Partial         bool
+	FirstDescending bool
+	FirstExpression bool
+	FirstCollation  string // Empty means inherit the table column collation.
 }
 
 // ParseCreateTableSqlCommand extracts column order, the rowid alias, and the
@@ -56,6 +60,14 @@ func ParseCreateTableSqlCommand(command string) (TableDefinition, error) {
 	definition.Columns = make([]string, len(ddl.Columns))
 	for i, col := range ddl.Columns {
 		definition.Columns[i] = col.Name.Name
+		for _, constraint := range col.Constraints {
+			if collate, ok := constraint.(*sql.CollateConstraint); ok {
+				if definition.ColumnCollations == nil {
+					definition.ColumnCollations = make(map[string]string)
+				}
+				definition.ColumnCollations[col.Name.Name] = collate.Collation.Name
+			}
+		}
 	}
 	if definition.WithoutRowID {
 		return definition, nil
@@ -98,9 +110,22 @@ func ParseCreateIndexSqlCommand(command string) (IndexDefinition, error) {
 		return definition, fmt.Errorf("expected CREATE INDEX with column definitions")
 	}
 	definition.TableName = ddl.Table.Name
+	definition.Partial = ddl.WhereExpr != nil
+	definition.FirstDescending = ddl.Columns[0].Desc.IsValid()
+	first := ddl.Columns[0].X
+	if collate, ok := first.(*sql.CollateExpr); ok {
+		definition.FirstCollation = collate.Collation.Name.Name
+		first = collate.X
+	}
+	_, plainColumn := first.(*sql.Ident)
+	definition.FirstExpression = !plainColumn
 	definition.Columns = make([]string, len(ddl.Columns))
 	for i, col := range ddl.Columns {
-		if name, ok := col.X.(*sql.Ident); ok {
+		expr := col.X
+		if collate, ok := expr.(*sql.CollateExpr); ok {
+			expr = collate.X
+		}
+		if name, ok := expr.(*sql.Ident); ok {
 			definition.Columns[i] = name.Name
 		} else {
 			definition.Columns[i] = col.String()
@@ -108,4 +133,21 @@ func ParseCreateIndexSqlCommand(command string) (IndexDefinition, error) {
 	}
 
 	return definition, nil
+}
+
+// SupportsTextSeek checks the ordering and completeness required by Seek.
+func (d IndexDefinition) SupportsTextSeek(table TableDefinition) bool {
+	if d.Partial || d.FirstDescending || d.FirstExpression || len(d.Columns) == 0 {
+		return false
+	}
+	collation := d.FirstCollation
+	if collation == "" {
+		for name, declared := range table.ColumnCollations {
+			if strings.EqualFold(name, d.Columns[0]) {
+				collation = declared
+				break
+			}
+		}
+	}
+	return collation == "" || strings.EqualFold(collation, "BINARY")
 }

@@ -116,3 +116,39 @@ func TestCreateIndexRejectsInvalidStatements(t *testing.T) {
 		})
 	}
 }
+
+func TestIndexTextSeekEligibility(t *testing.T) {
+	for _, tc := range []struct {
+		table, index string
+		want         bool
+	}{
+		{"country TEXT", "country", true},
+		{"country TEXT", "country DESC", false},
+		{"country TEXT", "country ASC", true},
+		{"country TEXT", "country COLLATE NOCASE", false},
+		{"country TEXT COLLATE NOCASE", "country", false},
+		{"country TEXT COLLATE RTRIM", "COUNTRY", false},
+		{"country TEXT COLLATE NOCASE", "country COLLATE BINARY", true},
+		{"country TEXT COLLATE BINARY", "country", true},
+		{"country TEXT", "lower(country)", false},
+	} {
+		table, err := sql.ParseCreateTableSqlCommand("CREATE TABLE companies(" + tc.table + ")")
+		if err != nil {
+			t.Fatal(err)
+		}
+		idx, err := sql.ParseCreateIndexSqlCommand("CREATE INDEX idx ON companies(" + tc.index + ")")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := idx.SupportsTextSeek(table); got != tc.want {
+			t.Errorf("table=%s index=%s: got %v", tc.table, tc.index, got)
+		}
+	}
+	idx, err := sql.ParseCreateIndexSqlCommand("CREATE INDEX idx ON companies(country) WHERE country = 'eritrea'")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if idx.SupportsTextSeek(sql.TableDefinition{}) {
+		t.Fatal("accepted partial index")
+	}
+}

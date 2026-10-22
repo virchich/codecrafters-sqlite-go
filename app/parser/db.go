@@ -168,4 +168,11 @@ func (db *DB) NewTableCursor(rootPage uint32) (*TableCursor, error) {
 	return &c, nil
 }
 
-//func (db *DB) NewIndexCursor(rootPage uint32) (*IndexCursor, error) {}
+// NewIndexCursor creates an independent index scan rooted at rootPage.
+func (db *DB) NewIndexCursor(rootPage uint32) (*IndexCursor, error) {
+	c, err := NewIndexCursor(rootPage, db)
+	if err != nil {
+		return nil, err
+	}
+	return &c, nil
+}

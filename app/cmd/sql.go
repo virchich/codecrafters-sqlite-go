@@ -12,7 +12,7 @@ import (
 	"github.com/codecrafters-io/sqlite-starter-go/app/table"
 )
 
-// Sql executes a supported SELECT using a table scan and writes results to stdout.
+// Sql executes a supported SELECT using an index when supported and writes results to stdout.
 // Rows are pipe-separated; COUNT(*) prints one number.
 func Sql(databaseFilePath string, sqlString string) error {
 	db, err := parser.Open(databaseFilePath)
@@ -48,6 +48,26 @@ func Sql(databaseFilePath string, sqlString string) error {
 		return err
 	}
 
+	// Seek currently supports ascending text keys with BINARY collation.
+	if s.Where != nil && s.Where.Operator == sql.Equal {
+		if target, ok := s.Where.Value.(string); ok {
+			for _, idx := range ti.IndexInfo {
+				columns := idx.IndexDefinitions.Columns
+				if !idx.IndexDefinitions.SupportsTextSeek(ti.TableDefinition) || !strings.EqualFold(columns[0], s.Where.Column) {
+					continue
+				}
+				idxC, err := db.NewIndexCursor(idx.IndexRootPage)
+				if err != nil {
+					return err
+				}
+				if err := idxC.Seek(target); err != nil {
+					return err
+				}
+				return executeIndexQuery(idxC, &db, ti.TableRootPage, target, schema, &s)
+			}
+		}
+	}
+
 	c, err := db.NewTableCursor(ti.TableRootPage)
 	if err != nil {
 		return err
@@ -56,8 +76,54 @@ func Sql(databaseFilePath string, sqlString string) error {
 	return executeTableQuery(c, schema, &s)
 }
 
+// indexedRows adapts matching index entries to the table records used by
+// filtering, projection, and aggregation.
+type indexedRows struct {
+	cursor *parser.IndexCursor
+	db     *parser.DB
+	root   uint32
+	target string
+	done   bool
+}
+
+func (r *indexedRows) Next() (parser.TableRecord, error) {
+	if r.done {
+		return parser.TableRecord{}, io.EOF
+	}
+	entry, err := r.cursor.Next()
+	if err != nil {
+		return parser.TableRecord{}, err
+	}
+	values := entry.Record.Body
+	if len(values) < 2 {
+		return parser.TableRecord{}, fmt.Errorf("index entry missing key or rowId")
+	}
+	key, ok := values[0].(string)
+	if !ok || key != r.target {
+		r.done = true
+		return parser.TableRecord{}, io.EOF
+	}
+	rowID, ok := values[len(values)-1].(int64)
+	if !ok {
+		return parser.TableRecord{}, fmt.Errorf("index entry has invalid rowId type %T", values[len(values)-1])
+	}
+	row, err := r.db.LookupTableByRowID(r.root, rowID)
+	if err == io.EOF {
+		return parser.TableRecord{}, fmt.Errorf("index references missing table row %d", rowID)
+	}
+	return row, err
+}
+
+func executeIndexQuery(c *parser.IndexCursor, db *parser.DB, root uint32, target string, schema *table.Schema, s *sql.SqlLine) error {
+	return executeTableQuery(&indexedRows{cursor: c, db: db, root: root, target: target}, schema, s)
+}
+
+type tableRecordSource interface {
+	Next() (parser.TableRecord, error)
+}
+
 // executeTableQuery applies filtering before aggregation or projection.
-func executeTableQuery(c *parser.TableCursor, schema *table.Schema, s *sql.SqlLine) error {
+func executeTableQuery(c tableRecordSource, schema *table.Schema, s *sql.SqlLine) error {
 	onlyCount := strings.EqualFold(s.Select, "COUNT(*)")
 	filterIndex := -1
 	if s.Where != nil {
